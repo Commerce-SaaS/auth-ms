@@ -1,10 +1,12 @@
+import { Organization } from "src/organization/entities/organization.entity";
 import { 
   Entity, 
   Column, 
   PrimaryGeneratedColumn, 
   CreateDateColumn, 
   UpdateDateColumn, 
-  DeleteDateColumn 
+  DeleteDateColumn, 
+  OneToMany
 } from "typeorm";
 
 @Entity()
@@ -20,6 +22,9 @@ export class User {
 
   @Column()
   name: string;
+
+  // @OneToMany(() => Organization, organization => organization.owner)
+  // organizations: Organization[];
 
   @DeleteDateColumn({ nullable: true })
   deletedAt: Date | null;

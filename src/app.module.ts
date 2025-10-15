@@ -8,6 +8,7 @@ import { AuthModule } from './auth/auth.module';
 import { SessionModule } from './session/session.module';
 import { JwtProvidersModule } from './jwt-provider/jwt-provider.module';
 import { CustomMailerModule } from './custom-mailer/custom-mailer.module';
+import { OrganizationModule } from './organization/organization.module';
 
 @Module({
   imports: [
@@ -27,7 +28,8 @@ import { CustomMailerModule } from './custom-mailer/custom-mailer.module';
     AuthModule,
     SessionModule,
     JwtProvidersModule,
-    CustomMailerModule
+    CustomMailerModule,
+    OrganizationModule
   ],
   controllers: [],
   providers: [],
