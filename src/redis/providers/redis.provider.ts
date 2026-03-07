@@ -1,4 +1,3 @@
-// redis.provider.ts
 import { Provider } from '@nestjs/common';
 import Redis from 'ioredis';
 import { envs } from 'src/config';

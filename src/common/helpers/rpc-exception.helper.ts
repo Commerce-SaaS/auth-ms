@@ -9,7 +9,7 @@ export class RpcExceptionHelper {
 
     if (error.code === '23505') {
       throw new RpcException({
-        message: 'Duplicate entry: product already exists',
+        message: `Duplicate entry: ${error.table} already exists`,
         statusCode: HttpStatus.CONFLICT,
       });
     }
@@ -48,7 +48,7 @@ export class RpcExceptionHelper {
     });
   }
 
-  static badRequestExcetion(message: string): never {
+  static badRequestException(message: string): never {
     throw new RpcException({
       message,
       statusCode: HttpStatus.BAD_REQUEST,

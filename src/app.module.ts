@@ -1,14 +1,20 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { UserModule } from './user/user.module';
+import { SaaSUserModule } from './user/saas-user.module';
 import { envs } from './config';
 import { ConfigModule } from '@nestjs/config';
 import { RedisModule } from './redis/redis.module';
-import { AuthModule } from './auth/auth.module';
+
 import { SessionModule } from './session/session.module';
 import { JwtProvidersModule } from './jwt-provider/jwt-provider.module';
-import { CustomMailerModule } from './custom-mailer/custom-mailer.module';
-import { OrganizationModule } from './organization/organization.module';
+import { RabbitMQModule } from './transports/rabbitmq.module';
+import {
+  AUTHZ_EVENTS_CLIENT,
+  NOTIFICATIONS_EVENTS_CLIENT,
+} from './config/services';
+import { SaaSAuthModule } from './auth/saas-auth/saas-auth.module';
+import { CustomerAuthModule } from './auth/customer-auth/customer-auth.module';
+import { CustomerModule } from './customer/customer.module';
 
 @Module({
   imports: [
@@ -23,13 +29,23 @@ import { OrganizationModule } from './organization/organization.module';
       autoLoadEntities: true,
       synchronize: envs.nodeEnv === 'development',
     }),
-    UserModule,
+    SaaSUserModule,
+    SaaSAuthModule,
+    CustomerAuthModule,
+    CustomerModule,
     RedisModule,
-    AuthModule,
     SessionModule,
     JwtProvidersModule,
-    CustomMailerModule,
-    OrganizationModule
+    RabbitMQModule.register({
+      name: NOTIFICATIONS_EVENTS_CLIENT,
+      queue: envs.rabbitmqEventsQueue,
+      url: envs.rabbitmqUrl,
+    }),
+    RabbitMQModule.register({
+      name: AUTHZ_EVENTS_CLIENT,
+      queue: envs.rabbitmqAuthzEventQueue,
+      url: envs.rabbitmqUrl,
+    }),
   ],
   controllers: [],
   providers: [],
