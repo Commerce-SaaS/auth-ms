@@ -13,7 +13,7 @@ export class SessionController {
   }
 
   @MessagePattern(SESSION_PATTERNS.LOGOUT_ALL)
-  logoutAllSessions(@Payload() userId: { id: string }) {
-    return this.sessionService.logoutAllSessions(userId.id);
+  logoutAllSessions(@Payload() userId: string) {
+    return this.sessionService.logoutAllSessions(userId);
   }
 }

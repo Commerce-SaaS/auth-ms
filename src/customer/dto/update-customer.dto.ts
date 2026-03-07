@@ -1,7 +1,7 @@
 import { IsDate, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
 import { Transform } from 'class-transformer';
 
-export class UpdateSaaSUserDto {
+export class UpdateCustomerDto {
   @IsUUID('4')
   id: string;
 

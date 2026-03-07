@@ -1,8 +1,7 @@
 export interface JwtData {
     jti:   string;
     sub:   string;
-    email: string;
-    role?: string;
+    platformRole?: string;
     iat:   number;
     exp:   number;
 }

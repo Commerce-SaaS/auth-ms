@@ -6,5 +6,4 @@ export interface SessionData {
 
 export interface UserData {
     userId: string;
-    role?: string;
 }
