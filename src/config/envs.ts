@@ -21,6 +21,7 @@ const envSchema = z
     RMQ_EVENTS_QUEUE_AUTHZ: z.string().min(1, 'RMQ_EVENTS_QUEUE_AUTHZ cannot be empty'),
     REDIS_HOST: z.string(),
     REDIS_PORT: z.coerce.number().default(6379),
+    GOOGLE_CLIENT_ID: z.string().min(1, 'GOOGLE_CLIENT_ID cannot be empty'),
     VERIFY_EMAIL_URL: z.string().url(),
     RESET_PASSWORD_URL: z.string().url(),
   })
@@ -53,6 +54,7 @@ export const envs = {
   resetTokenSecret: parsedEnv.data.JWT_SECRET_RESET,
   redisHost: parsedEnv.data.REDIS_HOST,
   redisPort: parsedEnv.data.REDIS_PORT,
+  googleClientId: parsedEnv.data.GOOGLE_CLIENT_ID,
   resetPasswordUrl: parsedEnv.data.RESET_PASSWORD_URL,
   verifyEmailUrl: parsedEnv.data.VERIFY_EMAIL_URL,
 };

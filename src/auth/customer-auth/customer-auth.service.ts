@@ -12,7 +12,10 @@ import {
   NOTIFICATIONS_EVENTS_CLIENT,
 } from 'src/config/services';
 import { ClientProxy } from '@nestjs/microservices';
-import { AUTHZ_PATTERNS, CUSTOMER_MAILER_PATTERNS } from './patterns/customer-auth.patterns';
+import {
+  AUTHZ_PATTERNS,
+  CUSTOMER_MAILER_PATTERNS,
+} from './patterns/customer-auth.patterns';
 import { UserAuthzRefreshReason } from '../shared/enums/user_authz_refresh_reason.enum';
 import { LoginDto } from '../shared/dto/login.dto';
 import { ChangePasswordDto } from '../shared/dto/change-password.dto';
@@ -21,24 +24,50 @@ import { ResetPasswordDto } from '../shared/dto/reset-password.dto';
 import { Customer } from 'src/customer/entities/customer.entity';
 import { RegisterCustomerDto } from './dto/register-customer.dto';
 import { PlatformRolesEnum } from '../shared/enums/platform-roles.enum';
+import { GoogleAuthDto } from '../shared/dto/google-auth.dto';
+import { GoogleOAuthService } from '../oauth/google-oauth.service';
 
+/**
+ * Servicio de autenticación para clientes.
+ * Gestiona el registro, inicio de sesión, renovación de tokens y recuperación de contraseñas.
+ * Integra JWT, Redis, microservicios de eventos y OAuth de Google.
+ */
 @Injectable()
 export class CustomerAuthService {
   constructor(
     private readonly jwtService: JwtService,
     @Inject('JWT_REFRESH') private readonly jwtRefreshService: JwtService,
-    @InjectRepository(Customer) private readonly customerRepository: Repository<Customer>,
+    @InjectRepository(Customer)
+    private readonly customerRepository: Repository<Customer>,
     private readonly sessionService: SessionService,
     @Inject(NOTIFICATIONS_EVENTS_CLIENT)
     private readonly eventsClient: ClientProxy,
     @Inject(AUTHZ_EVENTS_CLIENT)
     private readonly authzClient: ClientProxy,
+
+    private oAuthClient: GoogleOAuthService,
   ) {}
 
+  /**
+   * Registra un nuevo cliente en el sistema.
+   * @param {RegisterCustomerDto} dto - Datos de registro del cliente (email, contraseña, nombre, etc.)
+   * @returns {Promise<{user: Customer, tokens: {accessToken: string, refreshToken: string}}>}
+   * - user: Datos del cliente registrado (sin contraseña)
+   * - tokens: JWT de acceso y refresco
+   * @throws {RpcException} Si el email ya está registrado o hay error en la base de datos
+   * 
+   * Flujo:
+   * 1. Valida que el email no exista
+   * 2. Encripta la contraseña con bcrypt (10 rounds)
+   * 3. Guarda el cliente en la base de datos
+   * 4. Genera tokens JWT (acceso y refresco)
+   * 5. Guarda la sesión en Redis con TTL de 24h
+   * 6. Emite evento para enviar email de verificación
+   * 7. Emite evento de refresco de autorización
+   */
   async register(dto: RegisterCustomerDto) {
     const { password, email, organizationId } = dto;
-    
-    // 1# Validate if user exists
+
     const user = await this.findUserIncludingDeleted({
       email: email.toLowerCase(),
     });
@@ -47,27 +76,25 @@ export class CustomerAuthService {
       RpcExceptionHelper.duplicate('User');
     }
     try {
-      // 2# Hash password
       const passwordHash = await bcrypt.hash(password, 10);
 
-      // 3# Save user
       const newUser = await this.customerRepository.save({
         passwordHash,
-        ...dto
+        ...dto,
       });
 
-      // 4# Generete tokens
       const { passwordHash: _, deletedAt, updatedAt, ...rest } = newUser;
 
       const jti = uuidv4();
 
-      const { accessToken, refreshToken } = await this.sessionService.signAuthTokens({
-        jti,
-        sub: newUser.id,
-        platformRole: PlatformRolesEnum.CUSTOMER
-      });
+      const { accessToken, refreshToken } =
+        await this.sessionService.signAuthTokens({
+          jti,
+          sub: newUser.id,
+          platformRole: PlatformRolesEnum.CUSTOMER,
+        });
 
-      // 5# Save session redis
+      // Save session redis
       const sessionData = {
         jti,
         data: { userId: rest.id },
@@ -75,13 +102,13 @@ export class CustomerAuthService {
       };
       await this.sessionService.saveSession(sessionData);
 
-      //6 # Send verification email
+      // Send verification email
       this.eventsClient.emit(CUSTOMER_MAILER_PATTERNS.VERIFY_EMAIL, {
         email: newUser.email,
         verifyUrl: `${envs.verifyEmailUrl}?token=${accessToken}`,
       });
 
-      // 7# Emit authz event
+      // Emit authz event
       this.authzClient.emit(AUTHZ_PATTERNS.USER_AUTHZ_REFRESH, {
         userId: newUser.id,
         organizationId,
@@ -100,10 +127,23 @@ export class CustomerAuthService {
     }
   }
 
+  /**
+   * Inicia sesión de un cliente existente.
+   * @param {LoginDto} loginDto - Email y contraseña del cliente
+   * @returns {Promise<{user: Customer, tokens: {accessToken: string, refreshToken: string}}>}
+   * @throws {RpcException} Si el usuario no existe, cuenta desactivada o credenciales inválidas
+   * 
+   * Flujo:
+   * 1. Busca el cliente por email (incluyendo eliminados)
+   * 2. Valida que la cuenta no esté desactivada (deletedAt)
+   * 3. Verifica la contraseña con bcrypt
+   * 4. Genera nuevos tokens JWT
+   * 5. Guarda sesión en Redis (TTL 24h)
+   * 6. Emite evento de refresco de autorización
+   */
   async login(loginDto: LoginDto) {
     const { password, email } = loginDto;
 
-    // 1. Find user, including soft-deleted accounts
     const userData = await this.findUserIncludingDeleted({
       email: email.toLowerCase(),
     });
@@ -112,12 +152,10 @@ export class CustomerAuthService {
       RpcExceptionHelper.notFound('User');
     }
     try {
-      // 2. Prevent login if the user account is soft-deleted
       if (userData.deletedAt) {
         RpcExceptionHelper.unauthorized('User account is deactivated');
       }
 
-      // 3. Validate password
       const isPasswordValid = await bcrypt.compare(
         password,
         userData.passwordHash,
@@ -126,18 +164,17 @@ export class CustomerAuthService {
         RpcExceptionHelper.unauthorized('Invalid credentials');
       }
 
-      // 4. Prepare clean payload (exclude password and unnecessary timestamps)
       const { passwordHash, deletedAt, updatedAt, ...safeUser } = userData;
 
-      // 5. Generate tokens
       const jti = uuidv4();
-      const { accessToken, refreshToken } = await this.sessionService.signAuthTokens({
-        jti,
-        sub: userData.id,
-        platformRole: PlatformRolesEnum.CUSTOMER
-      });
+      const { accessToken, refreshToken } =
+        await this.sessionService.signAuthTokens({
+          jti,
+          sub: userData.id,
+          platformRole: PlatformRolesEnum.CUSTOMER,
+        });
 
-      // 6. Save session in Redis
+      // Save session in Redis
       const sessionData = {
         jti,
         data: { userId: userData.id },
@@ -145,7 +182,7 @@ export class CustomerAuthService {
       };
       await this.sessionService.saveSession(sessionData);
 
-      // 7. Emit authz event
+      // Emit authz event
       this.authzClient.emit(AUTHZ_PATTERNS.USER_AUTHZ_REFRESH, {
         userId: userData.id,
         reason: UserAuthzRefreshReason.LOGIN,
@@ -163,29 +200,122 @@ export class CustomerAuthService {
     }
   }
 
+  /**
+   * Autentica un cliente usando Google OAuth.
+   * @param {GoogleAuthDto} dto - ID token de Google y organizationId
+   * @returns {Promise<{user: Customer, tokens: {accessToken: string, refreshToken: string}}>}
+   * @throws {RpcException} Si el token es inválido
+   * 
+   * Flujo:
+   * 1. Verifica el ID token de Google
+   * 2. Si no existe cliente con ese email, lo crea automáticamente
+   * 3. Si ya existe, usa la información existente
+   * 4. Genera tokens JWT
+   * 5. Guarda sesión en Redis (TTL 24h)
+   * 6. Emite evento de refresco de autorización
+   * 
+   * Nota: Google Auth marca el email como verificado automáticamente
+   */
+  async googleLogin(dto: GoogleAuthDto) {
+    const payload = await this.oAuthClient.verifyIdToken(dto.idToken);
+
+    if (!payload) {
+      RpcExceptionHelper.unauthorized('Invalid Google token');
+    }
+
+    const email = payload.email;
+    const googleId = payload.sub;
+    const name = payload.name;
+
+    let customer = await this.customerRepository.findOne({
+      where: { email },
+    });
+
+    if (!customer) {
+      customer = await this.customerRepository.save({
+        email,
+        name,
+        googleId,
+        organizationId: dto.organizationId,
+        provider: 'google',
+        emailVerified: true,
+      });
+    }
+
+    const jti = uuidv4();
+    const { accessToken, refreshToken } =
+      await this.sessionService.signAuthTokens({
+        jti,
+        sub: customer.id,
+        platformRole: PlatformRolesEnum.CUSTOMER,
+      });
+
+    // Save session in Redis
+    const sessionData = {
+      jti,
+      data: { userId: customer.id },
+      ttl: 60 * 60 * 24,
+    };
+    await this.sessionService.saveSession(sessionData);
+
+    // Emit authz event
+    this.authzClient.emit(AUTHZ_PATTERNS.USER_AUTHZ_REFRESH, {
+      userId: customer.id,
+      reason: UserAuthzRefreshReason.LOGIN,
+    });
+
+    const {
+      passwordHash,
+      deletedAt,
+      updatedAt,
+      organizationId,
+      createdAt,
+      googleId: google,
+      ...rest
+    } = customer;
+
+    return {
+      user: rest,
+      tokens: {
+        accessToken,
+        refreshToken,
+      },
+    };
+  }
+
+  /**
+   * Renueva el token de acceso usando un refresh token.
+   * @param {string} incomingRefreshToken - Token de refresco actual
+   * @returns {Promise<{accessToken: string, refreshToken: string}>}
+   * @throws {RpcException} Si el refresh token es inválido, expirado o no tiene payload válido
+   * 
+   * Flujo:
+   * 1. Verifica el refresh token
+   * 2. Extrae el userId del payload
+   * 3. Genera nuevos tokens de acceso y refresco
+   * 4. Guarda nueva sesión en Redis (TTL 15 min)
+   * 5. Emite evento de refresco de autorización
+   */
   async refresh(incomingRefreshToken: string) {
     try {
-      // 1# Verify refresh token
       const payload =
         await this.jwtRefreshService.verifyAsync(incomingRefreshToken);
 
       if (!payload?.sub) {
         RpcExceptionHelper.unauthorized('Invalid refresh token payload');
       }
+      const { sub: userId } = payload;
 
-      // 2# Extract user data
-      const { sub: userId, } = payload;
-
-      // 3# Generate new tokens
       const jti = uuidv4();
 
-      const { accessToken, refreshToken } = await this.sessionService.signAuthTokens({
-        jti,
-        sub: userId,
-        platformRole: PlatformRolesEnum.CUSTOMER
-      });
+      const { accessToken, refreshToken } =
+        await this.sessionService.signAuthTokens({
+          jti,
+          sub: userId,
+          platformRole: PlatformRolesEnum.CUSTOMER,
+        });
 
-      // 4# Save session on redis
+      // Save session on redis
       const sessionData = {
         jti,
         data: { userId: userId },
@@ -193,7 +323,7 @@ export class CustomerAuthService {
       };
       await this.sessionService.saveSession(sessionData);
 
-      // 5. Emit authz event
+      // Emit authz event
       this.authzClient.emit(AUTHZ_PATTERNS.USER_AUTHZ_REFRESH, {
         userId,
         reason: UserAuthzRefreshReason.REFRESH_TOKEN,
@@ -208,6 +338,21 @@ export class CustomerAuthService {
     }
   }
 
+  /**
+   * Cambia la contraseña de un cliente autenticado.
+   * @param {string} id - ID del cliente
+   * @param {ChangePasswordDto} dto - Contraseña antigua y nueva
+   * @returns {Promise<{message: string}>}
+   * @throws {RpcException} Si el usuario no existe o la contraseña antigua es incorrecta
+   * 
+   * Flujo:
+   * 1. Busca el cliente por ID
+   * 2. Valida la contraseña antigua mediante re-autenticación
+   * 3. Encripta la nueva contraseña
+   * 4. Actualiza en la base de datos
+   * 
+   * Nota: Requiere que el cliente esté autenticado
+   */
   async changePassword(id: string, dto: ChangePasswordDto) {
     const user = await this.findUserIncludingDeleted({ id });
 
@@ -233,6 +378,20 @@ export class CustomerAuthService {
     }
   }
 
+  /**
+   * Inicia el proceso de recuperación de contraseña.
+   * @param {ForgotPasswordDto} dto - Email del cliente
+   * @returns {Promise<{message: string}>}
+   * 
+   * Flujo:
+   * 1. Busca el cliente por email
+   * 2. Invalida todos los tokens de refresco anteriores
+   * 3. Genera un nuevo reset token con JTI único
+   * 4. Emite evento para enviar email con enlace de reseteo
+   * 
+   * Nota: Retorna mensaje genérico por seguridad (no revela si el email existe)
+   * El reset token tiene expiración y se consume al usarlo
+   */
   async forgotPassword(dto: ForgotPasswordDto) {
     const { email } = dto;
     const user = await this.findUserIncludingDeleted({ email });
@@ -249,7 +408,7 @@ export class CustomerAuthService {
       jti,
       sub: user.id,
       type: 'reset',
-      platformRole: PlatformRolesEnum.CUSTOMER
+      platformRole: PlatformRolesEnum.CUSTOMER,
     });
 
     this.eventsClient.emit(CUSTOMER_MAILER_PATTERNS.FORGOT_PASSWORD, {
@@ -260,22 +419,35 @@ export class CustomerAuthService {
     return { message: 'If the email exists, reset instructions were sent' };
   }
 
+  /**
+   * Resetea la contraseña usando un reset token válido.
+   * @param {ResetPasswordDto} dto - Reset token y nueva contraseña
+   * @returns {Promise<{message: string}>}
+   * @throws {RpcException} Si el token es inválido, expirado, o consumido
+   * 
+   * Flujo:
+   * 1. Verifica el reset token con secreto especial
+   * 2. Valida estructura del payload (sub, jti, type='reset')
+   * 3. Consume el token desde Redis
+   * 4. Valida que el userId coincida
+   * 5. Encripta la nueva contraseña
+   * 6. Actualiza en la base de datos
+   * 7. Invalida todos los reset tokens del usuario
+   * 
+   * Nota: El token solo se puede usar una vez (consumido en Redis)
+   */
   async resetPassword(dto: ResetPasswordDto) {
     const { token, password } = dto;
 
     try {
-      // 1. Verificar la integridad y autenticidad del token
       const payload = await this.jwtService.verifyAsync(token, {
         secret: envs.resetTokenSecret,
       });
 
-      // 2. Validar estructura del payload y el propósito del token
-      // Asumimos que al generar el token guardaste el userType en el payload
       if (!payload?.sub || !payload.jti || payload.type !== 'reset') {
         RpcExceptionHelper.unauthorized('Invalid token structure');
       }
 
-      // 3. Consumir el token de la sesión (Single Use Check)
       const userIdFromToken = await this.sessionService.consumeResetToken(
         payload.jti,
       );
@@ -284,11 +456,8 @@ export class CustomerAuthService {
         RpcExceptionHelper.unauthorized('Invalid or expired token');
       }
 
-      // 4. Cifrar la nueva contraseña
       const newHashedPassword = await bcrypt.hash(password, 10);
 
-      // 5. Actualización filtrada:
-      // No solo usamos el ID, sino que reforzamos con el TYPE para asegurar integridad
       const result = await this.customerRepository.update(
         {
           id: payload.sub,
@@ -302,13 +471,12 @@ export class CustomerAuthService {
         RpcExceptionHelper.notFound('Customer');
       }
 
-      // 6. Limpieza de seguridad: Invalidar otros intentos de reset pendientes
       await this.sessionService.invalidateAllUserResetTokens(payload.sub);
 
       return {
         message: 'Password reset successfully',
       };
-    } catch (error) {
+    } catch (error: any) {
       if (error.name === 'TokenExpiredError') {
         RpcExceptionHelper.unauthorized('Token has expired');
       }
@@ -316,6 +484,14 @@ export class CustomerAuthService {
     }
   }
 
+  /**
+   * Busca un cliente en la base de datos incluyendo los eliminados lógicamente.
+   * @param {FindOptionsWhere<Customer>} where - Condiciones de búsqueda (por id, email, etc.)
+   * @returns {Promise<Customer | null>} Cliente encontrado o null
+   * 
+   * Nota: Utiliza withDeleted: true para incluir clientes con deletedAt != null
+   * Usado en login y forgotPassword para permitir operaciones incluso con cuentas desactivadas
+   */
   async findUserIncludingDeleted(
     where: FindOptionsWhere<Customer>,
   ): Promise<Customer | null> {

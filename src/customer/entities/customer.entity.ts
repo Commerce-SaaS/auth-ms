@@ -9,7 +9,7 @@ import {
 } from 'typeorm';
 
 @Entity()
-@Index(['email', 'organizationId'], { unique: true }) 
+@Index(['email', 'organizationId'], { unique: true })
 export class Customer {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -17,10 +17,19 @@ export class Customer {
   @Column()
   email: string;
 
+  @Column({ nullable: true })
+  googleId: string;
+
+  @Column({ nullable: true })
+  provider: 'google';
+
+  @Column({ default: false })
+  emailVerified: boolean;
+
   @Column()
   organizationId: string;
 
-  @Column()
+  @Column({ nullable: true })
   passwordHash: string;
 
   @Column()

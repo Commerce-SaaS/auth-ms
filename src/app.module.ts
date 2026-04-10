@@ -15,6 +15,7 @@ import {
 import { SaaSAuthModule } from './auth/saas-auth/saas-auth.module';
 import { CustomerAuthModule } from './auth/customer-auth/customer-auth.module';
 import { CustomerModule } from './customer/customer.module';
+import { OauthModule } from './auth/oauth/oauth.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { CustomerModule } from './customer/customer.module';
       queue: envs.rabbitmqAuthzEventQueue,
       url: envs.rabbitmqUrl,
     }),
+    OauthModule,
   ],
   controllers: [],
   providers: [],

@@ -1,6 +1,7 @@
 export const SAAS_AUTH_PATTERNS = {
   REGISTER: 'auth.saas.register',
   LOGIN: 'auth.saas.login',
+  GOOGLE_AUTH: 'auth.google',
   REFRESH: 'auth.saas.refresh',
   CHANGE_PASSWORD: 'auth.saas.change_password',
   FORGOT_PASSWORD: 'auth.saas.forgot_password',
