@@ -16,31 +16,38 @@ import {
 } from 'src/config/services';
 import { ClientProxy } from '@nestjs/microservices';
 import { RegisterUserDto } from '../shared/dto/register-user.dto';
-import { AUTHZ_PATTERNS, SAAS_MAILER_PATTERNS } from './patterns/saas-auth.patterns';
+import {
+  AUTHZ_PATTERNS,
+  SAAS_MAILER_PATTERNS,
+} from './patterns/saas-auth.patterns';
 import { UserAuthzRefreshReason } from '../shared/enums/user_authz_refresh_reason.enum';
 import { LoginDto } from '../shared/dto/login.dto';
 import { ChangePasswordDto } from '../shared/dto/change-password.dto';
 import { ForgotPasswordDto } from '../shared/dto/forgot-password.dto';
 import { ResetPasswordDto } from '../shared/dto/reset-password.dto';
 import { PlatformRolesEnum } from '../shared/enums/platform-roles.enum';
+import { GoogleAuthDto } from '../shared/dto/google-auth.dto';
+import { GoogleOAuthService } from '../oauth/google-oauth.service';
 
 @Injectable()
 export class SaaSAuthService {
   constructor(
     private readonly jwtService: JwtService,
     @Inject('JWT_REFRESH') private readonly jwtRefreshService: JwtService,
-    @InjectRepository(SaasUser) private readonly userRepository: Repository<SaasUser>,
+    @InjectRepository(SaasUser)
+    private readonly userRepository: Repository<SaasUser>,
     private readonly sessionService: SessionService,
     @Inject(NOTIFICATIONS_EVENTS_CLIENT)
     private readonly eventsClient: ClientProxy,
     @Inject(AUTHZ_EVENTS_CLIENT)
     private readonly authzClient: ClientProxy,
+
+    private oAuthClient: GoogleOAuthService,
   ) {}
 
   async register(registerUserDto: RegisterUserDto) {
     const { password, email, name } = registerUserDto;
 
-    // 1# Validate if user exists
     const user = await this.findUserIncludingDeleted({
       email: email.toLowerCase(),
     });
@@ -49,28 +56,26 @@ export class SaaSAuthService {
       RpcExceptionHelper.duplicate('User');
     }
     try {
-      // 2# Hash password
       const passwordHash = await bcrypt.hash(password, 10);
 
-      // 3# Save user
       const newUser = await this.userRepository.save({
         passwordHash,
         email,
         name,
       });
 
-      // 4# Generete tokens
       const { passwordHash: _, deletedAt, updatedAt, ...rest } = newUser;
 
       const jti = uuidv4();
 
-      const { accessToken, refreshToken } = await this.sessionService.signAuthTokens({
-        jti,
-        sub: newUser.id,
-        platformRole: PlatformRolesEnum.STAFF
-      });
+      const { accessToken, refreshToken } =
+        await this.sessionService.signAuthTokens({
+          jti,
+          sub: newUser.id,
+          platformRole: PlatformRolesEnum.STAFF,
+        });
 
-      // 5# Save session redis
+      // Save session redis
       const sessionData = {
         jti,
         data: { userId: rest.id },
@@ -78,13 +83,13 @@ export class SaaSAuthService {
       };
       await this.sessionService.saveSession(sessionData);
 
-      //6 # Send verification email
+      // Send verification email
       this.eventsClient.emit(SAAS_MAILER_PATTERNS.VERIFY_EMAIL, {
         email: newUser.email,
         verifyUrl: `${envs.verifyEmailUrl}?token=${accessToken}`,
       });
 
-      // 7# Emit authz event
+      // Emit authz event
       this.authzClient.emit(AUTHZ_PATTERNS.USER_AUTHZ_REFRESH, {
         userId: newUser.id,
         reason: UserAuthzRefreshReason.REGISTER_SAAS_USER,
@@ -105,7 +110,6 @@ export class SaaSAuthService {
   async login(loginDto: LoginDto) {
     const { password, email } = loginDto;
 
-    // 1. Find user, including soft-deleted accounts
     const userData = await this.findUserIncludingDeleted({
       email: email.toLowerCase(),
     });
@@ -114,12 +118,10 @@ export class SaaSAuthService {
       RpcExceptionHelper.notFound('User');
     }
     try {
-      // 2. Prevent login if the user account is soft-deleted
       if (userData.deletedAt) {
         RpcExceptionHelper.unauthorized('User account is deactivated');
       }
 
-      // 3. Validate password
       const isPasswordValid = await bcrypt.compare(
         password,
         userData.passwordHash,
@@ -128,18 +130,17 @@ export class SaaSAuthService {
         RpcExceptionHelper.unauthorized('Invalid credentials');
       }
 
-      // 4. Prepare clean payload (exclude password and unnecessary timestamps)
       const { passwordHash, deletedAt, updatedAt, ...safeUser } = userData;
 
-      // 5. Generate tokens
       const jti = uuidv4();
-      const { accessToken, refreshToken } = await this.sessionService.signAuthTokens({
-        jti,
-        sub: userData.id,
-        platformRole: PlatformRolesEnum.STAFF
-      });
+      const { accessToken, refreshToken } =
+        await this.sessionService.signAuthTokens({
+          jti,
+          sub: userData.id,
+          platformRole: PlatformRolesEnum.STAFF,
+        });
 
-      // 6. Save session in Redis
+      // Save session in Redis
       const sessionData = {
         jti,
         data: { userId: userData.id },
@@ -147,7 +148,7 @@ export class SaaSAuthService {
       };
       await this.sessionService.saveSession(sessionData);
 
-      // 7. Emit authz event
+      // Emit authz event
       this.authzClient.emit(AUTHZ_PATTERNS.USER_AUTHZ_REFRESH, {
         userId: userData.id,
         reason: UserAuthzRefreshReason.LOGIN,
@@ -165,9 +166,73 @@ export class SaaSAuthService {
     }
   }
 
+  async googleLogin(dto: GoogleAuthDto) {
+    const payload = await this.oAuthClient.verifyIdToken(dto.idToken);
+
+    if (!payload) {
+      RpcExceptionHelper.unauthorized('Invalid Google token');
+    }
+
+    const email = payload.email;
+    const googleId = payload.sub;
+    const name = payload.name;
+
+    let user = await this.userRepository.findOne({
+      where: { email },
+    });
+
+    if (!user) {
+      user = await this.userRepository.save({
+        email,
+        name,
+        googleId,
+        provider: 'google',
+        emailVerified: true,
+      });
+    }
+
+    const jti = uuidv4();
+    const { accessToken, refreshToken } =
+      await this.sessionService.signAuthTokens({
+        jti,
+        sub: user.id,
+        platformRole: PlatformRolesEnum.STAFF,
+      });
+
+    // Save session in Redis
+    const sessionData = {
+      jti,
+      data: { userId: user.id },
+      ttl: 60 * 60 * 24,
+    };
+    await this.sessionService.saveSession(sessionData);
+
+    // Emit authz event
+    this.authzClient.emit(AUTHZ_PATTERNS.USER_AUTHZ_REFRESH, {
+      userId: user.id,
+      reason: UserAuthzRefreshReason.LOGIN,
+    });
+
+    const {
+      passwordHash,
+      deletedAt,
+      updatedAt,
+      createdAt,
+      googleId: google,
+      ...rest
+    } = user;
+
+    return {
+      user: rest,
+      tokens: {
+        accessToken,
+        refreshToken,
+      },
+    };
+  }
+
   async refresh(incomingRefreshToken: string) {
     try {
-      // 1# Verify refresh token
       const payload =
         await this.jwtRefreshService.verifyAsync(incomingRefreshToken);
 
@@ -175,19 +240,18 @@ export class SaaSAuthService {
         RpcExceptionHelper.unauthorized('Invalid refresh token payload');
       }
 
-      // 2# Extract user data
       const { sub: userId } = payload;
 
-      // 3# Generate new tokens
       const jti = uuidv4();
 
-      const { accessToken, refreshToken } = await this.sessionService.signAuthTokens({
-        jti,
-        sub: userId,
-        platformRole: PlatformRolesEnum.STAFF
-      });
+      const { accessToken, refreshToken } =
+        await this.sessionService.signAuthTokens({
+          jti,
+          sub: userId,
+          platformRole: PlatformRolesEnum.STAFF,
+        });
 
-      // 4# Save session on redis
+      // Save session on redis
       const sessionData = {
         jti,
         data: { userId: userId },
@@ -195,7 +259,7 @@ export class SaaSAuthService {
       };
       await this.sessionService.saveSession(sessionData);
 
-      // 5. Emit authz event
+      // Emit authz event
       this.authzClient.emit(AUTHZ_PATTERNS.USER_AUTHZ_REFRESH, {
         userId,
         reason: UserAuthzRefreshReason.REFRESH_TOKEN,
@@ -251,7 +315,7 @@ export class SaaSAuthService {
       jti,
       sub: user.id,
       type: 'reset',
-      platformRole: PlatformRolesEnum.STAFF
+      platformRole: PlatformRolesEnum.STAFF,
     });
 
     this.eventsClient.emit(SAAS_MAILER_PATTERNS.FORGOT_PASSWORD, {
@@ -266,19 +330,14 @@ export class SaaSAuthService {
     const { token, password } = dto;
 
     try {
-      // 1. Verificar la integridad y autenticidad del token
       const payload = await this.jwtService.verifyAsync(token, {
         secret: envs.resetTokenSecret,
       });
 
-      // 2. Validar estructura del payload y el propósito del token
-      // Asumimos que al generar el token guardaste el userType en el payload
       if (!payload?.sub || !payload.jti || payload.type !== 'reset') {
         RpcExceptionHelper.unauthorized('Invalid token structure');
       }
 
-
-      // 4. Consumir el token de la sesión (Single Use Check)
       const userIdFromToken = await this.sessionService.consumeResetToken(
         payload.jti,
       );
@@ -287,11 +346,8 @@ export class SaaSAuthService {
         RpcExceptionHelper.unauthorized('Invalid or expired token');
       }
 
-      // 5. Cifrar la nueva contraseña
       const newHashedPassword = await bcrypt.hash(password, 10);
 
-      // 6. Actualización filtrada:
-      // No solo usamos el ID, sino que reforzamos con el TYPE para asegurar integridad
       const result = await this.userRepository.update(
         {
           id: payload.sub,
@@ -302,17 +358,15 @@ export class SaaSAuthService {
       );
 
       if (!result.affected) {
-        // Si no hay filas afectadas, el usuario no existe en ese contexto (type)
         RpcExceptionHelper.notFound('User');
       }
 
-      // 7. Limpieza de seguridad: Invalidar otros intentos de reset pendientes
       await this.sessionService.invalidateAllUserResetTokens(payload.sub);
 
       return {
         message: 'Password reset successfully',
       };
-    } catch (error) {
+    } catch (error: any) {
       if (error.name === 'TokenExpiredError') {
         RpcExceptionHelper.unauthorized('Token has expired');
       }
