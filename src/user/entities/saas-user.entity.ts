@@ -23,7 +23,7 @@ export class SaasUser {
   @Column()
   name: string;
 
-  @Column()
+  @Column({ nullable: true })
   googleId: string;
 
   @Column({ nullable: true })
