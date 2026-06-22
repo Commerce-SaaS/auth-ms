@@ -54,4 +54,11 @@ export class RpcExceptionHelper {
       statusCode: HttpStatus.BAD_REQUEST,
     });
   }
+  static forbidden(message: string, code?: string): never {
+    throw new RpcException({
+      message,
+      statusCode: HttpStatus.FORBIDDEN,
+      ...(code && { code }),
+    });
+  }
 }

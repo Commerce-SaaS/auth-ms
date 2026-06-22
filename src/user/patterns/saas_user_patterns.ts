@@ -3,5 +3,6 @@ export const SAAS_USER_PATTERNS = {
   GET_ALL_PROFILES: 'auth.saas.user.get_all_profiles',
   UPDATE: 'auth.saas.user.update',
   DELETE: 'auth.saas.user.delete',
+  DEACTIVATE: 'auth.saas.user.deactivate',
   RESTORE: 'auth.saas.user.restore',
 } as const;

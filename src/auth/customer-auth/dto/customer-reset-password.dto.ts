@@ -1,9 +1,22 @@
-import { IsJWT, IsNotEmpty, IsString, IsStrongPassword } from 'class-validator';
+import {
+  IsEmail,
+  IsJWT,
+  IsNotEmpty,
+  IsNumberString,
+  IsString,
+  IsStrongPassword,
+  IsUUID,
+  Length,
+} from 'class-validator';
 
 export class ResetPasswordDto {
-  @IsJWT()
+  @IsEmail()
+  email: string;
+
   @IsString()
-  token: string;
+  @Length(6, 6)
+  @IsNumberString()
+  code: string;
 
   @IsNotEmpty()
   @IsStrongPassword(
@@ -20,4 +33,7 @@ export class ResetPasswordDto {
     },
   )
   password: string;
+
+  @IsUUID()
+  organizationId: string;
 }

@@ -5,8 +5,9 @@ import { Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { RpcExceptionHelper } from 'src/common/helpers/rpc-exception.helper';
 import * as bcrypt from 'bcrypt';
-import { LoginDto } from 'src/auth/shared/dto/login.dto';
 import { SaaSAuthService } from 'src/auth/saas-auth/saas-auth.service';
+import { SessionService } from 'src/session/session.service';
+import { LoginDto } from 'src/auth/saas-auth/dto/saas-login.dto';
 
 @Injectable()
 export class SaaSUserService {
@@ -15,6 +16,7 @@ export class SaaSUserService {
   constructor(
     @InjectRepository(SaasUser) private readonly repo: Repository<SaasUser>,
     private readonly saaSAuthService: SaaSAuthService,
+    private readonly sessionService: SessionService,
   ) {}
 
   async getProfile(id: string) {
@@ -23,7 +25,6 @@ export class SaaSUserService {
 
       const user = await this.repo.findOne({
         where: { id },
-        withDeleted: true,
       });
 
       if (!user) {
@@ -31,10 +32,10 @@ export class SaaSUserService {
         RpcExceptionHelper.notFound('User');
       }
 
-      const { passwordHash, ...safeUser } = user;
+      const { passwordHash, deletedAt, updatedAt, ...safeUser } = user;
       this.logger.log(`Fetched user id=${id}`);
       return safeUser;
-    } catch (error) {
+    } catch (error: any) {
       this.logger.error(`Error fetching user id=${id}: ${error.message}`);
       RpcExceptionHelper.handle(error);
     }
@@ -48,17 +49,13 @@ export class SaaSUserService {
       const userUpdated = await this.repo.update({ id }, { ...rest });
 
       if (!userUpdated.affected) {
-        this.logger.warn(
-          `Failed to update user with id=${id} (not found)`,
-        );
-        RpcExceptionHelper.notFound(
-          `User with id: ${id} not found`,
-        );
+        this.logger.warn(`Failed to update user with id=${id} (not found)`);
+        RpcExceptionHelper.notFound(`User with id: ${id} not found`);
       }
 
       this.logger.log(`User with id=${id} updated successfully`);
       return this.getProfile(id);
-    } catch (error) {
+    } catch (error: any) {
       this.logger.error(
         `Error updating user with id=${dto.id}: ${error.message}`,
       );
@@ -68,36 +65,29 @@ export class SaaSUserService {
 
   async softDelete(id: string) {
     try {
-      // 1# Verify if user exists
       const user = await this.repo.findOne({
         where: { id },
         withDeleted: true,
       });
-
       if (!user) {
         RpcExceptionHelper.badRequestException(`User with id: ${id} not found`);
       }
 
-      if (user.deletedAt) {
-        RpcExceptionHelper.badRequestException(
-          `User with id: ${id} already soft deleted`,
-        );
+      if (!user.deletedAt) {
+        await this.repo.softDelete(id);
       }
 
-      // 2# Apply soft delete updates
-      await this.repo.softDelete(id);
+      await this.sessionService.logoutAllSessions(id);
 
       return { message: `User with id: ${id} was soft deleted` };
     } catch (error) {
       RpcExceptionHelper.handle(error);
     }
   }
-
   async restoreUser(loginDto: LoginDto) {
     const { email, password } = loginDto;
 
     try {
-      // 1. Find user including soft-deleted
       const user = await this.repo.findOne({
         where: { email: email.toLowerCase() },
         withDeleted: true,
@@ -107,13 +97,13 @@ export class SaaSUserService {
         RpcExceptionHelper.notFound('User');
       }
 
-      // 2. Validate password BEFORE restoring
-      const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
-      if (!isPasswordValid) {
+      const isPasswordValid =
+        !!user.passwordHash &&
+        (await bcrypt.compare(password, user.passwordHash));
+      if (!user || !isPasswordValid) {
         RpcExceptionHelper.unauthorized('Invalid credentials');
       }
 
-      // 3. Only restore if deleted
       if (!user.deletedAt) {
         RpcExceptionHelper.badRequestException(
           `User with email: ${email} is already active`,
@@ -122,7 +112,6 @@ export class SaaSUserService {
 
       await this.repo.restore(user.id);
 
-      // 4. Reuse login flow
       return await this.saaSAuthService.login(loginDto);
     } catch (error) {
       RpcExceptionHelper.handle(error);

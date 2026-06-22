@@ -1,12 +1,11 @@
 import { forwardRef, Module } from '@nestjs/common';
-import { SaaSUserService } from './saas-user.service';
-import { SaaSUserController } from './saas-user.controller';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { SaasUser } from './entities/saas-user.entity';
-import { envs } from 'src/config';
-import { JwtModule } from '@nestjs/jwt';
 import { RabbitMQModule } from 'src/transports/rabbitmq.module';
 import { SaaSAuthModule } from 'src/auth/saas-auth/saas-auth.module';
+import { SaaSUserController } from './saas-user.controller';
+import { SaaSUserService } from './saas-user.service';
+import { SessionModule } from 'src/session/session.module';
 
 @Module({
   controllers: [SaaSUserController],
@@ -15,11 +14,7 @@ import { SaaSAuthModule } from 'src/auth/saas-auth/saas-auth.module';
     forwardRef(() => SaaSAuthModule),
     RabbitMQModule,
     TypeOrmModule.forFeature([SaasUser]),
-    JwtModule.register({
-      global: true,
-      secret: envs.accessTokensecret,
-      signOptions: { expiresIn: '15m' },
-    }),
+    SessionModule,
   ],
   exports: [SaaSUserService, TypeOrmModule],
 })

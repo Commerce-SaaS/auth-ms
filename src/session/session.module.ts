@@ -6,7 +6,7 @@ import { JwtProvidersModule } from 'src/jwt-provider/jwt-provider.module';
 @Module({
   controllers: [SessionController],
   providers: [SessionService],
-  imports: [JwtProvidersModule],
   exports: [SessionService],
+  imports: [JwtProvidersModule],
 })
 export class SessionModule {}

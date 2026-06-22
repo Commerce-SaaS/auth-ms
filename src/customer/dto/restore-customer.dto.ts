@@ -1,20 +1,10 @@
-import {
-  IsEmail,
-  IsNotEmpty,
-  IsString,
-  IsStrongPassword,
-  IsUUID,
-} from 'class-validator';
+import { IsEmail, IsString, IsStrongPassword, IsUUID } from 'class-validator';
 
-export class RegisterCustomerDto {
+export class RestoreCustomerDto {
   @IsString()
   @IsEmail()
   email: string;
 
-  @IsUUID()
-  organizationId: string;
-
-  @IsNotEmpty()
   @IsStrongPassword(
     {
       minLength: 8,
@@ -30,7 +20,6 @@ export class RegisterCustomerDto {
   )
   password: string;
 
-  @IsNotEmpty()
-  @IsString()
-  name: string;
+  @IsUUID()
+  organizationId: string;
 }

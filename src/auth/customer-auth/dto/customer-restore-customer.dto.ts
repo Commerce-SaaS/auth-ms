@@ -1,6 +1,6 @@
-import { IsEmail, IsString, IsStrongPassword } from 'class-validator';
+import { IsEmail, IsString, IsStrongPassword, IsUUID } from 'class-validator';
 
-export class LoginDto {
+export class RestoreCustomerDto {
   @IsString()
   @IsEmail()
   email: string;
@@ -19,4 +19,7 @@ export class LoginDto {
     },
   )
   password: string;
+
+  @IsUUID()
+  organizationId: string;
 }

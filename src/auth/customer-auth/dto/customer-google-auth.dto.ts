@@ -1,9 +1,9 @@
-import { IsString } from 'class-validator';
+import { IsString, IsUUID } from 'class-validator';
 
 export class GoogleAuthDto {
   @IsString()
   idToken: string;
 
-  @IsString()
+  @IsUUID()
   organizationId: string;
 }

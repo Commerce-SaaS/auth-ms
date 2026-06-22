@@ -1,16 +1,13 @@
-import { IsDate, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
-import { Transform } from 'class-transformer';
+import { IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class UpdateCustomerDto {
-  @IsUUID('4')
+  @IsUUID()
   id: string;
 
-  @IsNotEmpty()
-  @IsString()
-  name: string;
-
-  @Transform(({ value }) => (value ? new Date(value) : null))
-  @IsDate()
   @IsOptional()
-  deletedAt?: Date | null;
+  @IsString()
+  name?: string;
+
+  @IsUUID()
+  organizationId: string;
 }

@@ -1,9 +1,13 @@
+export interface ClientInfo {
+  userAgent?: string;
+  ip?: string;
+  deviceName?: string;
+}
+
 export interface SessionData {
   jti: string;
   ttl: number;
-  data: UserData;
-}
-
-export interface UserData {
-    userId: string;
+  data: { userId: string };
+  clientInfo?: ClientInfo;
+  createdAt?: string;
 }

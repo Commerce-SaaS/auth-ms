@@ -23,11 +23,11 @@ export class SaasUser {
   @Column()
   name: string;
 
-  @Column({ nullable: true })
-  googleId: string;
+  @Column({ nullable: true, type: 'varchar' })
+  googleId?: string | null;
 
-  @Column({ nullable: true })
-  provider: 'google';
+  @Column({ nullable: true, type: 'varchar' })
+  provider?: 'google' | null;
 
   @Column({ default: false })
   emailVerified: boolean;

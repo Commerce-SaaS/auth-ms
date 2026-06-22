@@ -1,10 +1,9 @@
 import { forwardRef, Module } from '@nestjs/common';
 import { SaaSAuthController } from './saas-auth.controller';
-import { SaaSUserModule } from 'src/user/saas-user.module';
 import { SessionModule } from 'src/session/session.module';
-import { JwtProvidersModule } from 'src/jwt-provider/jwt-provider.module';
 import { SaaSAuthService } from './saas-auth.service';
 import { OauthModule } from '../oauth/oauth.module';
+import { SaaSUserModule } from 'src/user/saas-user.module';
 
 @Module({
   controllers: [SaaSAuthController],
@@ -12,7 +11,6 @@ import { OauthModule } from '../oauth/oauth.module';
   imports: [
     forwardRef(() => SaaSUserModule),
     SessionModule,
-    JwtProvidersModule,
     OauthModule
   ],
   exports: [SaaSAuthService],

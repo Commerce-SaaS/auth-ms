@@ -1,21 +1,20 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { SaaSUserModule } from './user/saas-user.module';
 import { envs } from './config';
 import { ConfigModule } from '@nestjs/config';
 import { RedisModule } from './redis/redis.module';
 
 import { SessionModule } from './session/session.module';
-import { JwtProvidersModule } from './jwt-provider/jwt-provider.module';
 import { RabbitMQModule } from './transports/rabbitmq.module';
 import {
   AUTHZ_EVENTS_CLIENT,
   NOTIFICATIONS_EVENTS_CLIENT,
 } from './config/services';
 import { SaaSAuthModule } from './auth/saas-auth/saas-auth.module';
+import { OauthModule } from './auth/oauth/oauth.module';
+import { SaaSUserModule } from './user/saas-user.module';
 import { CustomerAuthModule } from './auth/customer-auth/customer-auth.module';
 import { CustomerModule } from './customer/customer.module';
-import { OauthModule } from './auth/oauth/oauth.module';
 
 @Module({
   imports: [
@@ -36,7 +35,6 @@ import { OauthModule } from './auth/oauth/oauth.module';
     CustomerModule,
     RedisModule,
     SessionModule,
-    JwtProvidersModule,
     RabbitMQModule.register({
       name: NOTIFICATIONS_EVENTS_CLIENT,
       queue: envs.rabbitmqEventsQueue,

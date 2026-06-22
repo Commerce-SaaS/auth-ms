@@ -1,77 +1,149 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { SessionData } from './interfaces/session-data.interface';
 import { RpcExceptionHelper } from 'src/common/helpers/rpc-exception.helper';
 import Redis from 'ioredis';
-import { JwtData } from 'src/common/interfaces/jwt-data.interface';
 import { JwtService } from '@nestjs/jwt';
-import { envs } from 'src/config';
-import { JwtPayload } from 'src/common/interfaces/jwt-payload.interface';
+import { JwtToken } from 'src/jwt-provider/enum/jwt-token.enum';
+import {
+  JwtPayload,
+  TokenTypeEnum,
+} from 'src/common/interfaces/jwt-payload.interface';
+import { SessionData } from './interfaces/session-data.interface';
+import { UAParser } from 'ua-parser-js';
 
 @Injectable()
 export class SessionService {
   constructor(
     @Inject('REDIS_CLIENT') private readonly redis: Redis,
-    private readonly jwtService: JwtService,
-    @Inject('JWT_REFRESH') private readonly jwtRefreshService: JwtService,
+    @Inject(JwtToken.ACCESS) private readonly jwtAccess: JwtService,
+    @Inject(JwtToken.REFRESH) private readonly jwtRefresh: JwtService,
+    @Inject(JwtToken.RESET) private readonly jwtReset: JwtService,
   ) {}
 
-  async signResetToken(payload: JwtPayload & { type: 'reset' }) {
-    if (!payload.jti || !payload.sub) {
-      RpcExceptionHelper.internalServerError('Invalid reset token payload');
+  async saveVerifyEmailCode(userId: string, code: string, ttl = 60 * 15) {
+    try {
+      await this.redis.set(`verify-email-code:${userId}`, code, 'EX', ttl);
+    } catch {
+      RpcExceptionHelper.internalServerError(
+        'Could not save verify-email code',
+      );
     }
+  }
 
-    const resetToken = await this.jwtService.signAsync(payload, {
-      secret: envs.resetTokenSecret,
-      expiresIn: '15m',
+  async getVerifyEmailCode(userId: string): Promise<string | null> {
+    return this.redis.get(`verify-email-code:${userId}`);
+  }
+
+  async incrementVerifyAttempts(
+    userId: string,
+    ttl = 60 * 15,
+  ): Promise<number> {
+    const key = `verify-email-attempts:${userId}`;
+    const attempts = await this.redis.incr(key);
+    if (attempts === 1) await this.redis.expire(key, ttl); // TTL al primer fallo
+    return attempts;
+  }
+
+  async clearVerifyEmailCode(userId: string) {
+    await this.redis.del(
+      `verify-email-code:${userId}`,
+      `verify-email-attempts:${userId}`,
+    );
+  }
+
+  async saveResetCode(userId: string, code: string, ttl = 60 * 15) {
+    await this.redis.set(`reset-code:${userId}`, code, 'EX', ttl);
+  }
+
+  async getResetCode(userId: string): Promise<string | null> {
+    return this.redis.get(`reset-code:${userId}`);
+  }
+
+  async incrementResetAttempts(userId: string, ttl = 60 * 15): Promise<number> {
+    const key = `reset-attempts:${userId}`;
+    const attempts = await this.redis.incr(key);
+    if (attempts === 1) await this.redis.expire(key, ttl);
+    return attempts;
+  }
+
+  async clearResetCode(userId: string) {
+    await this.redis.del(`reset-code:${userId}`, `reset-attempts:${userId}`);
+  }
+  async tryStartResendCooldown(userId: string, ttl = 60): Promise<boolean> {
+    const key = `verify-email-resend-cooldown:${userId}`;
+    const result = await this.redis.set(key, '1', 'EX', ttl, 'NX');
+    return result === 'OK'; // true: arrancó (permitido) · null: ya estaba en cooldown
+  }
+
+  async signAccessToken(payload: JwtPayload) {
+    const { jti, sub, platformRole, aud } = payload;
+
+    const accessToken = await this.jwtAccess.signAsync({
+      jti,
+      sub,
+      aud,
+      type: TokenTypeEnum.ACCESS,
+      platformRole,
     });
 
-    await this.saveResetToken(payload.jti, payload.sub, 15 * 60);
-
-    return { resetToken };
+    return accessToken;
   }
 
-  async signAuthTokens(payload: JwtPayload) {
-    const { jti, sub, platformRole } = payload;
+  async signRefreshToken(payload: JwtPayload) {
+    const { jti, sub, platformRole, aud } = payload;
 
-    const accessToken = await this.jwtService.signAsync(
-      { jti, sub, type: 'access', platformRole },
-      {
-        secret: envs.accessTokensecret,
-        expiresIn: '30m',
-      },
-    );
+    const refreshToken = await this.jwtRefresh.signAsync({
+      jti,
+      sub,
+      aud,
+      type: TokenTypeEnum.REFRESH,
+      platformRole,
+    });
 
-    const refreshToken = await this.jwtRefreshService.signAsync(
-      { jti, sub, type: 'refresh', platformRole },
-      {
-        secret: envs.refreshTokenSecret,
-        expiresIn: '7d',
-      },
-    );
-
-    return { accessToken, refreshToken };
+    return refreshToken;
   }
-  async verifyToken(token: string) {
-    try {
-      const user = this.jwtService.verify<JwtData>(token, {
-        secret: envs.accessTokensecret,
-      });
-      return user;
-    } catch (error) {
-      if (error.name === 'TokenExpiredError') {
-        RpcExceptionHelper.unauthorized('Token expired');
-      }
-      RpcExceptionHelper.unauthorized('Invalid token');
-    }
+
+  async signResetToken(payload: JwtPayload) {
+    const { jti, sub, platformRole, aud } = payload;
+
+    const refreshToken = await this.jwtReset.signAsync({
+      jti,
+      sub,
+      aud,
+      type: TokenTypeEnum.REFRESH,
+      platformRole,
+    });
+
+    return refreshToken;
+  }
+
+  async verifyResetToken(token: string): Promise<JwtPayload> {
+    return this.jwtReset.verifyAsync<JwtPayload>(token);
+  }
+
+  async verifyRefreshToken(token: string): Promise<JwtPayload> {
+    return this.jwtRefresh.verifyAsync<JwtPayload>(token);
+  }
+
+  private clamp(v?: string, max = 256) {
+    return v ? v.slice(0, max) : null;
   }
 
   async saveSession(sessionData: SessionData) {
-    const { data, jti, ttl } = sessionData;
+    const { data, jti, ttl, clientInfo, createdAt } = sessionData;
+    const now = new Date().toISOString();
+
+    const record = {
+      userId: data.userId,
+      createdAt: createdAt ?? now,
+      userAgent: this.clamp(clientInfo?.userAgent),
+      ip: clientInfo?.ip ?? null,
+      deviceName: this.clamp(clientInfo?.deviceName, 64),
+    };
 
     try {
       await this.redis
         .multi()
-        .set(`session:${jti}`, JSON.stringify(data), 'EX', ttl)
+        .set(`session:${jti}`, JSON.stringify(record), 'EX', ttl)
         .sadd(`user-sessions:${data.userId}`, jti)
         .expire(`user-sessions:${data.userId}`, ttl)
         .exec();
@@ -80,24 +152,91 @@ export class SessionService {
     }
   }
 
-  async logoutSession(token: string) {
-    try {
-      const user = await this.verifyToken(token);
+  async getSession(
+    jti: string,
+  ): Promise<{ userId: string; createdAt?: string } | null> {
+    const raw = await this.redis.get(`session:${jti}`);
+    return raw ? JSON.parse(raw) : null;
+  }
 
-      if (!user?.jti || !user?.sub) {
-        RpcExceptionHelper.unauthorized('Invalid token payload');
+  async listSessions(userId: string, currentJti?: string) {
+    const jtis = await this.redis.smembers(`user-sessions:${userId}`);
+    if (!jtis.length) return [];
+
+    const pipeline = this.redis.pipeline();
+    jtis.forEach((jti) => pipeline.get(`session:${jti}`));
+    const results = await pipeline.exec();
+
+    const sessions: any[] = [];
+    const stale: string[] = [];
+
+    jtis.forEach((jti, i) => {
+      const raw = results?.[i]?.[1] as string | null;
+      if (!raw) {
+        stale.push(jti);
+        return;
       }
+      const s = JSON.parse(raw);
 
+      const ua = new UAParser(s.userAgent ?? '').getResult();
+      const parsed = [ua.browser.name, ua.os.name].filter(Boolean).join(' · ');
+      const device = s.deviceName || parsed || 'Unknown device';
+
+      sessions.push({
+        jti,
+        device,
+        ip: s.ip ?? null,
+        createdAt: s.createdAt ?? null,
+        current: jti === currentJti,
+      });
+    });
+
+    if (stale.length)
+      await this.redis.srem(`user-sessions:${userId}`, ...stale);
+
+    return sessions.sort(
+      (a, b) => +new Date(b.createdAt ?? 0) - +new Date(a.createdAt ?? 0),
+    );
+  }
+
+  async revokeSession(userId: string, jti: string) {
+    const isOwn = await this.redis.sismember(`user-sessions:${userId}`, jti);
+    if (!isOwn) {
+      RpcExceptionHelper.notFound('Session');
+    }
+    await this.redis
+      .multi()
+      .del(`session:${jti}`)
+      .srem(`user-sessions:${userId}`, jti)
+      .exec();
+
+    return { message: 'Session revoked successfully' };
+  }
+
+  async deleteSession(jti: string, userId: string): Promise<void> {
+    await this.redis
+      .multi()
+      .del(`session:${jti}`)
+      .srem(`user-sessions:${userId}`, jti)
+      .exec();
+  }
+
+  async logoutSession(jti: string, userId: string) {
+    if (!jti || !userId) {
+      RpcExceptionHelper.unauthorized('Invalid session');
+    }
+
+    try {
       await this.redis
         .multi()
-        .del(`session:${user.jti}`)
-        .srem(`user-sessions:${user.sub}`, user.jti)
+        .del(`session:${jti}`)
+        .srem(`user-sessions:${userId}`, jti)
         .exec();
-
-      return { message: 'Session logged out successfully' };
-    } catch (error) {
+    } catch {
       RpcExceptionHelper.internalServerError('Could not logout session');
     }
+
+    return { message: 'Session logged out successfully' };
   }
 
   async logoutAllSessions(userId: string) {
@@ -123,56 +262,53 @@ export class SessionService {
     }
   }
 
-  async saveResetToken(jti: string, userId: string, ttl = 15 * 60) {
-    try {
-      await this.redis
-        .multi()
-        .set(`reset-token:${jti}`, userId, 'EX', ttl)
-        .sadd(`user-reset-tokens:${userId}`, jti)
-        .expire(`user-reset-tokens:${userId}`, ttl)
-        .exec();
-    } catch {
-      RpcExceptionHelper.internalServerError('Could not save reset token');
+  async logoutAllSessionsExcept(userId: string, exceptJti: string) {
+    const jtis = await this.redis.smembers(`user-sessions:${userId}`);
+    const toDelete = jtis.filter((jti) => jti !== exceptJti);
+
+    if (toDelete.length) {
+      const multi = this.redis.multi();
+      toDelete.forEach((jti) => multi.del(`session:${jti}`));
+      multi.srem(`user-sessions:${userId}`, ...toDelete); // el actual queda en el set
+      await multi.exec();
     }
   }
 
-  async consumeResetToken(jti: string): Promise<string | null> {
-    try {
-      const key = `reset-token:${jti}`;
-      const userId = await this.redis.get(key);
-
-      if (!userId) return null;
-
-      await this.redis.del(key);
-      return userId;
-    } catch {
-      return null;
-    }
+  async savePendingEmailChange(
+    userId: string,
+    newEmail: string,
+    code: string,
+    ttl = 60 * 15,
+  ) {
+    await this.redis.set(
+      `change-email-pending:${userId}`,
+      JSON.stringify({ newEmail, code }),
+      'EX',
+      ttl,
+    );
   }
 
-  async invalidateAllUserResetTokens(userId: string) {
-    if (!userId) return;
+  async getPendingEmailChange(
+    userId: string,
+  ): Promise<{ newEmail: string; code: string } | null> {
+    const raw = await this.redis.get(`change-email-pending:${userId}`);
+    return raw ? JSON.parse(raw) : null;
+  }
 
-    try {
-      const key = `user-reset-tokens:${userId}`;
-      const jtis = await this.redis.smembers(key);
+  async incrementChangeEmailAttempts(
+    userId: string,
+    ttl = 60 * 15,
+  ): Promise<number> {
+    const key = `change-email-attempts:${userId}`;
+    const attempts = await this.redis.incr(key);
+    if (attempts === 1) await this.redis.expire(key, ttl);
+    return attempts;
+  }
 
-      if (!jtis.length) return;
-
-      const pipeline = this.redis.multi();
-
-      for (const jti of jtis) {
-        pipeline.del(`reset-token:${jti}`);
-      }
-
-      pipeline.del(key);
-
-      await pipeline.exec();
-    } catch (error) {
-      console.error('Error invalidating all user reset tokens:', error);
-      RpcExceptionHelper.internalServerError(
-        'Could not invalidate user reset tokens',
-      );
-    }
+  async clearPendingEmailChange(userId: string) {
+    await this.redis.del(
+      `change-email-pending:${userId}`,
+      `change-email-attempts:${userId}`,
+    );
   }
 }
