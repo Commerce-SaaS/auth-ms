@@ -24,6 +24,16 @@ const envSchema = z
     RMQ_EVENTS_QUEUE_AUTHZ: z
       .string()
       .min(1, 'RMQ_EVENTS_QUEUE_AUTHZ cannot be empty'),
+    // Must match the events queue names used by orders-ms, payments-ms, and organization-ms
+    RMQ_EVENTS_QUEUE_ORDERS: z
+      .string()
+      .min(1, 'RMQ_EVENTS_QUEUE_ORDERS cannot be empty'),
+    RMQ_EVENTS_QUEUE_PAYMENTS: z
+      .string()
+      .min(1, 'RMQ_EVENTS_QUEUE_PAYMENTS cannot be empty'),
+    RMQ_EVENTS_QUEUE_ORGANIZATION: z
+      .string()
+      .min(1, 'RMQ_EVENTS_QUEUE_ORGANIZATION cannot be empty'),
     REDIS_HOST: z.string(),
     REDIS_PORT: z.coerce.number().default(6379),
     REDIS_PASS: z.string(),
@@ -55,6 +65,9 @@ export const envs = {
   rabbitmqQueue: parsedEnv.data.RABBITMQ_QUEUE,
   rabbitmqEventsQueue: parsedEnv.data.RMQ_EVENTS_QUEUE_NOTIFICATIONS,
   rabbitmqAuthzEventQueue: parsedEnv.data.RMQ_EVENTS_QUEUE_AUTHZ,
+  rabbitmqOrdersEventsQueue: parsedEnv.data.RMQ_EVENTS_QUEUE_ORDERS,
+  rabbitmqPaymentsEventsQueue: parsedEnv.data.RMQ_EVENTS_QUEUE_PAYMENTS,
+  rabbitmqOrganizationEventsQueue: parsedEnv.data.RMQ_EVENTS_QUEUE_ORGANIZATION,
   accessTokensecret: parsedEnv.data.JWT_SECRET_ACCESS,
   refreshTokenSecret: parsedEnv.data.JWT_SECRET_REFRESH,
   verifyEmailTokenSecret: parsedEnv.data.JWT_SECRET_VERIFY_EMAIL,

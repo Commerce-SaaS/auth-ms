@@ -60,7 +60,7 @@ export class CustomerAuthService {
     private readonly eventsClient: ClientProxy,
     @Inject(AUTHZ_EVENTS_CLIENT)
     private readonly authzClient: ClientProxy,
-  ) {}
+  ) { }
 
   async register(dto: RegisterCustomerDto) {
     const { password, email, name, organizationId, logoUrl, orgName } = dto;
@@ -83,6 +83,10 @@ export class CustomerAuthService {
         name,
         organizationId,
       });
+
+      this.logger.log(
+        `[AUTHZ-FLOW] register: userId=${newUser.id} organizationId=${organizationId} — verification email queued, authz deferred to verifyEmail`,
+      );
 
       await this.issueAndSendVerificationCode({
         customerId: newUser.id,
@@ -146,11 +150,15 @@ export class CustomerAuthService {
         ttl: 60 * 60 * 24 * 7, // 7d
       });
 
-      this.authzClient.emit(AUTHZ_PATTERNS.USER_AUTHZ_REFRESH, {
+      const loginAuthzPayload = {
         userId: userData.id,
         organizationId,
         reason: UserAuthzRefreshReason.LOGIN,
-      });
+      };
+      this.logger.log(
+        `[AUTHZ-FLOW] login: emitting user_authz_refresh userId=${loginAuthzPayload.userId} organizationId=${loginAuthzPayload.organizationId} reason=${loginAuthzPayload.reason}`,
+      );
+      this.authzClient.emit(AUTHZ_PATTERNS.USER_AUTHZ_REFRESH, loginAuthzPayload);
 
       return { user: safeUser, tokens: { accessToken, refreshToken } };
     } catch (error) {
@@ -205,6 +213,10 @@ export class CustomerAuthService {
         await this.customerRepository.save(customer);
       }
 
+      this.logger.log(
+        `[AUTHZ-FLOW] googleLogin: userId=${customer.id} organizationId=${organizationId} isNewCustomer=${reason === UserAuthzRefreshReason.REGISTER_CUSTOMER}`,
+      );
+
       const jti = uuidv4();
       const accessToken = await this.sessionService.signAccessToken({
         jti,
@@ -225,11 +237,11 @@ export class CustomerAuthService {
         ttl: 60 * 60 * 24 * 7, // 7d
       });
 
-      this.authzClient.emit(AUTHZ_PATTERNS.USER_AUTHZ_REFRESH, {
-        userId: customer.id,
-        organizationId,
-        reason,
-      });
+      const googleAuthzPayload = { userId: customer.id, organizationId, reason };
+      this.logger.log(
+        `[AUTHZ-FLOW] googleLogin: emitting user_authz_refresh userId=${googleAuthzPayload.userId} organizationId=${googleAuthzPayload.organizationId} reason=${googleAuthzPayload.reason}`,
+      );
+      this.authzClient.emit(AUTHZ_PATTERNS.USER_AUTHZ_REFRESH, googleAuthzPayload);
 
       const {
         passwordHash,
@@ -295,10 +307,14 @@ export class CustomerAuthService {
       ttl: 60 * 60 * 24 * 7, // 7d
     });
 
-    this.authzClient.emit(AUTHZ_PATTERNS.USER_AUTHZ_REFRESH, {
+    const refreshAuthzPayload = {
       userId,
       reason: UserAuthzRefreshReason.REFRESH_TOKEN,
-    });
+    };
+    this.logger.log(
+      `[AUTHZ-FLOW] refresh: emitting user_authz_refresh userId=${refreshAuthzPayload.userId} reason=${refreshAuthzPayload.reason}`,
+    );
+    this.authzClient.emit(AUTHZ_PATTERNS.USER_AUTHZ_REFRESH, refreshAuthzPayload);
 
     return { tokens: { accessToken, refreshToken } };
   }
@@ -430,6 +446,10 @@ export class CustomerAuthService {
       RpcExceptionHelper.unauthorized('Invalid or expired code');
     }
 
+    this.logger.log(
+      `[AUTHZ-FLOW] verifyEmail: received customerId=${customer.id} organizationId=${organizationId}`,
+    );
+
     if (customer.emailVerified) {
       return { message: 'Email already verified' };
     }
@@ -457,6 +477,15 @@ export class CustomerAuthService {
     );
     await this.sessionService.clearVerifyEmailCode(customer.id);
 
+    const verifyAuthzPayload = {
+      userId: customer.id,
+      organizationId,
+      reason: UserAuthzRefreshReason.REGISTER_CUSTOMER,
+    };
+    this.logger.log(
+      `[AUTHZ-FLOW] verifyEmail: success, emitting user_authz_refresh userId=${verifyAuthzPayload.userId} organizationId=${verifyAuthzPayload.organizationId} reason=${verifyAuthzPayload.reason}`,
+    );
+    this.authzClient.emit(AUTHZ_PATTERNS.USER_AUTHZ_REFRESH, verifyAuthzPayload);
     return { message: 'Email verified successfully' };
   }
 

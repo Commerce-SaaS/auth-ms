@@ -200,7 +200,7 @@ export class SaaSAuthService {
     }
 
     if (userData.deletedAt) {
-      RpcExceptionHelper.unauthorized('User account is deactivated');
+      RpcExceptionHelper.forbidden('User account is deactivated', SaasAuthErrorCode.ACCOUNT_DEACTIVATED);
     }
 
     if (!userData.emailVerified) {

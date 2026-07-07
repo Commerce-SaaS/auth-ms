@@ -32,7 +32,12 @@ import { CustomerService } from './customer.service';
 import { Customer } from './entities/customer.entity';
 import { SessionService } from '../session/session.service';
 import { CustomerAuthService } from '../auth/customer-auth/customer-auth.service';
-import { AUTHZ_EVENTS_CLIENT } from '../config/services';
+import {
+  AUTHZ_EVENTS_CLIENT,
+  ORDERS_EVENTS_CLIENT,
+  ORGANIZATION_EVENTS_CLIENT,
+  PAYMENTS_EVENTS_CLIENT,
+} from '../config/services';
 
 const ORG_A = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const ORG_B = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
@@ -50,7 +55,10 @@ function matchesWhere(row: any, where: any): boolean {
 describe('CustomerService — admin IDOR regression', () => {
   let service: CustomerService;
   let rows: any[];
-  let mockSessionService: { logoutAllSessions: jest.Mock };
+  let mockSessionService: {
+    logoutAllSessions: jest.Mock;
+    clearPendingEmailChange: jest.Mock;
+  };
 
   const fakeRepo = {
     findOne: jest.fn(),
@@ -92,6 +100,7 @@ describe('CustomerService — admin IDOR regression', () => {
     rows = makeRows();
     mockSessionService = {
       logoutAllSessions: jest.fn().mockResolvedValue(undefined),
+      clearPendingEmailChange: jest.fn().mockResolvedValue(undefined),
     };
 
     fakeRepo.findOne.mockImplementation(async ({ where }: any) =>
@@ -108,6 +117,9 @@ describe('CustomerService — admin IDOR regression', () => {
         { provide: CustomerAuthService, useValue: {} },
         { provide: SessionService, useValue: mockSessionService },
         { provide: AUTHZ_EVENTS_CLIENT, useValue: { emit: jest.fn() } },
+        { provide: ORDERS_EVENTS_CLIENT, useValue: { emit: jest.fn() } },
+        { provide: PAYMENTS_EVENTS_CLIENT, useValue: { emit: jest.fn() } },
+        { provide: ORGANIZATION_EVENTS_CLIENT, useValue: { emit: jest.fn() } },
       ],
     }).compile();
 

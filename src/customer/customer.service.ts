@@ -10,11 +10,17 @@ import { PaginationCustomerDto } from 'src/common';
 import { CreateCustomerDto } from './dto/create-customer.dto';
 import { AUTHZ_PATTERNS } from 'src/auth/saas-auth/patterns/saas-auth.patterns';
 import { UserAuthzRefreshReason } from 'src/auth/saas-auth/enums/user_authz_refresh_reason.enum';
-import { AUTHZ_EVENTS_CLIENT } from 'src/config/services';
+import {
+  AUTHZ_EVENTS_CLIENT,
+  ORDERS_EVENTS_CLIENT,
+  ORGANIZATION_EVENTS_CLIENT,
+  PAYMENTS_EVENTS_CLIENT,
+} from 'src/config/services';
 import { ClientProxy } from '@nestjs/microservices';
 import { SessionService } from 'src/session/session.service';
 import { RestoreCustomerDto } from './dto/restore-customer.dto';
 import { UpdateCustomerByAdminDto } from './dto/update-customer-by-admin.dto copy';
+import { CUSTOMER_USER_PATTERNS } from './patterns/customer_patterns';
 
 @Injectable()
 export class CustomerService {
@@ -26,6 +32,12 @@ export class CustomerService {
     private readonly sessionService: SessionService,
     @Inject(AUTHZ_EVENTS_CLIENT)
     private readonly authzClient: ClientProxy,
+    @Inject(ORDERS_EVENTS_CLIENT)
+    private readonly ordersEventsClient: ClientProxy,
+    @Inject(PAYMENTS_EVENTS_CLIENT)
+    private readonly paymentsEventsClient: ClientProxy,
+    @Inject(ORGANIZATION_EVENTS_CLIENT)
+    private readonly orgEventsClient: ClientProxy,
   ) {}
 
   async create(dto: CreateCustomerDto) {
@@ -45,11 +57,15 @@ export class CustomerService {
       const { passwordHash: _, deletedAt, updatedAt, ...rest } = newUser;
 
       // Emit authz event
-      this.authzClient.emit(AUTHZ_PATTERNS.USER_AUTHZ_REFRESH, {
+      const createAuthzPayload = {
         userId: newUser.id,
         organizationId,
         reason: UserAuthzRefreshReason.REGISTER_CUSTOMER,
-      });
+      };
+      this.logger.log(
+        `[AUTHZ-FLOW] create: userId=${createAuthzPayload.userId} organizationId=${createAuthzPayload.organizationId}, emitting user_authz_refresh reason=${createAuthzPayload.reason}`,
+      );
+      this.authzClient.emit(AUTHZ_PATTERNS.USER_AUTHZ_REFRESH, createAuthzPayload);
 
       return {
         customer: rest,
@@ -186,6 +202,7 @@ export class CustomerService {
         RpcExceptionHelper.notFound('Customer');
       }
 
+      // Step 1: Anonymize the customer record in this service's DB
       await this.repo.update(id, {
         email: `deleted_${id}@deleted.invalid`,
         name: `Deleted customer ${id}`,
@@ -196,7 +213,16 @@ export class CustomerService {
         deletedAt: new Date(),
       });
 
+      // Step 2: Kill all active sessions and any pending email-change code
       await this.sessionService.logoutAllSessions(id);
+      await this.sessionService.clearPendingEmailChange(id);
+
+      // Step 3: Fan out to downstream services so they anonymize their copy of this
+      //         customer's data. Fire-and-forget — we don't wait for their response.
+      const payload = { userId: id };
+      this.ordersEventsClient.emit(CUSTOMER_USER_PATTERNS.ANONYMIZED, payload);
+      this.paymentsEventsClient.emit(CUSTOMER_USER_PATTERNS.ANONYMIZED, payload);
+      this.orgEventsClient.emit(CUSTOMER_USER_PATTERNS.ANONYMIZED, payload);
 
       return { message: `Customer with id: ${id} was deleted` };
     } catch (error) {
@@ -325,6 +351,7 @@ export class CustomerService {
     });
     if (!customer) RpcExceptionHelper.notFound('Customer');
 
+    // Step 1: Anonymize the customer record in this service's DB
     await this.repo.update(
       { id, organizationId },
       {
@@ -338,7 +365,16 @@ export class CustomerService {
       },
     );
 
+    // Step 2: Kill all active sessions and any pending email-change code
     await this.sessionService.logoutAllSessions(id);
+    await this.sessionService.clearPendingEmailChange(id);
+
+    // Step 3: Fan out to downstream services (fire-and-forget)
+    const payload = { userId: id };
+    this.ordersEventsClient.emit(CUSTOMER_USER_PATTERNS.ANONYMIZED, payload);
+    this.paymentsEventsClient.emit(CUSTOMER_USER_PATTERNS.ANONYMIZED, payload);
+    this.orgEventsClient.emit(CUSTOMER_USER_PATTERNS.ANONYMIZED, payload);
+
     return { message: `Customer with id: ${id} was deleted` };
   }
 
