@@ -10,4 +10,12 @@ export class UpdateCustomerDto {
 
   @IsUUID()
   organizationId: string;
+
+  @IsOptional()
+  @IsString()
+  phone?: string;
+
+  @IsOptional()
+  @IsString()
+  address?: string;
 }

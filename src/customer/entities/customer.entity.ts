@@ -38,6 +38,12 @@ export class Customer {
   @Column()
   name: string;
 
+  @Column({ nullable: true, type: 'varchar' })
+  phone?: string | null;
+
+  @Column({ nullable: true, type: 'varchar' })
+  address?: string | null;
+
   @DeleteDateColumn({ nullable: true })
   deletedAt: Date | null;
 
