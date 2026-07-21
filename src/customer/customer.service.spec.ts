@@ -15,13 +15,10 @@ jest.mock('src/config', () => ({
     accessTokensecret: 'secret',
     refreshTokenSecret: 'secret',
     verifyEmailTokenSecret: 'secret',
-    resetTokenSecret: 'secret',
     redisHost: 'localhost',
     redisPort: 6379,
     redisPass: 'pass',
     googleClientId: 'gid',
-    resetPasswordUrl: 'http://localhost/reset',
-    verifyEmailUrl: 'http://localhost/verify',
   },
   RMQ_SERVICE: 'RMQ_SERVICE',
 }));

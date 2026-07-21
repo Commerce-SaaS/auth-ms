@@ -7,7 +7,6 @@ const envSchema = z
     JWT_SECRET_ACCESS: z.string(),
     JWT_SECRET_REFRESH: z.string(),
     JWT_SECRET_VERIFY_EMAIL: z.string(),
-    JWT_SECRET_RESET: z.string(),
     PORT: z.coerce.number().default(3000),
     DB_PORT: z.coerce.number().default(5432),
     DB_HOST: z.string(),
@@ -38,8 +37,6 @@ const envSchema = z
     REDIS_PORT: z.coerce.number().default(6379),
     REDIS_PASS: z.string(),
     GOOGLE_CLIENT_ID: z.string().min(1, 'GOOGLE_CLIENT_ID cannot be empty'),
-    VERIFY_EMAIL_URL: z.string().url(),
-    RESET_PASSWORD_URL: z.string().url(),
   })
   .required();
 
@@ -71,11 +68,8 @@ export const envs = {
   accessTokensecret: parsedEnv.data.JWT_SECRET_ACCESS,
   refreshTokenSecret: parsedEnv.data.JWT_SECRET_REFRESH,
   verifyEmailTokenSecret: parsedEnv.data.JWT_SECRET_VERIFY_EMAIL,
-  resetTokenSecret: parsedEnv.data.JWT_SECRET_RESET,
   redisHost: parsedEnv.data.REDIS_HOST,
   redisPort: parsedEnv.data.REDIS_PORT,
   googleClientId: parsedEnv.data.GOOGLE_CLIENT_ID,
-  resetPasswordUrl: parsedEnv.data.RESET_PASSWORD_URL,
-  verifyEmailUrl: parsedEnv.data.VERIFY_EMAIL_URL,
   redisPass: parsedEnv.data.REDIS_PASS
 };

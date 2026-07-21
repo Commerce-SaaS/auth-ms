@@ -7,6 +7,7 @@ import { PaginationCustomerDto } from 'src/common';
 import { CreateCustomerDto } from './dto/create-customer.dto';
 import { RestoreCustomerDto } from './dto/restore-customer.dto';
 import { UpdateCustomerByAdminDto } from './dto/update-customer-by-admin.dto copy';
+import { CustomerGrowthByAdminDto } from './dto/customer-growth-by-admin.dto';
 
 @Controller()
 export class CustomerController {
@@ -72,5 +73,10 @@ export class CustomerController {
   @MessagePattern(CUSTOMER_USER_PATTERNS.RESTORE_BY_ADMIN)
   restoreCustomerByAdmin(@Payload() p: { id: string; organizationId: string }) {
     return this.customerService.restoreCustomerByAdmin(p.id, p.organizationId);
+  }
+
+  @MessagePattern(CUSTOMER_USER_PATTERNS.GROWTH_BY_ADMIN)
+  growthByAdmin(@Payload() dto: CustomerGrowthByAdminDto) {
+    return this.customerService.growthByAdmin(dto);
   }
 }

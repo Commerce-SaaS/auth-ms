@@ -22,15 +22,7 @@ import { JwtToken } from './enum/jwt-token.enum';
           signOptions: { expiresIn: '7d' },
         }),
     },
-    {
-      provide: JwtToken.RESET,
-      useFactory: () =>
-        new JwtService({
-          secret: envs.resetTokenSecret,
-          signOptions: { expiresIn: '15m' },
-        }),
-    },
   ],
-  exports: [JwtToken.ACCESS, JwtToken.REFRESH, JwtToken.RESET],
+  exports: [JwtToken.ACCESS, JwtToken.REFRESH],
 })
 export class JwtProvidersModule {}

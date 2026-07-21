@@ -11,6 +11,7 @@ export const CUSTOMER_USER_PATTERNS = {
   SOFT_DELETE_BY_ADMIN: 'auth.customer.user.soft-delete_by_admin',
   DELETE_BY_ADMIN: 'auth.customer.user.delete_by_admin',
   RESTORE_BY_ADMIN: 'auth.customer.user.restore_by_admin',
+  GROWTH_BY_ADMIN: 'auth.customer.user.growth_by_admin',
   // Fired after a customer is anonymized; consumed by orders-ms, payments-ms, organization-ms
   ANONYMIZED: 'customer.anonymized',
 } as const;

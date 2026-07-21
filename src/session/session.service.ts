@@ -16,7 +16,6 @@ export class SessionService {
     @Inject('REDIS_CLIENT') private readonly redis: Redis,
     @Inject(JwtToken.ACCESS) private readonly jwtAccess: JwtService,
     @Inject(JwtToken.REFRESH) private readonly jwtRefresh: JwtService,
-    @Inject(JwtToken.RESET) private readonly jwtReset: JwtService,
   ) {}
 
   async saveVerifyEmailCode(userId: string, code: string, ttl = 60 * 15) {
@@ -100,24 +99,6 @@ export class SessionService {
     });
 
     return refreshToken;
-  }
-
-  async signResetToken(payload: JwtPayload) {
-    const { jti, sub, platformRole, aud } = payload;
-
-    const refreshToken = await this.jwtReset.signAsync({
-      jti,
-      sub,
-      aud,
-      type: TokenTypeEnum.REFRESH,
-      platformRole,
-    });
-
-    return refreshToken;
-  }
-
-  async verifyResetToken(token: string): Promise<JwtPayload> {
-    return this.jwtReset.verifyAsync<JwtPayload>(token);
   }
 
   async verifyRefreshToken(token: string): Promise<JwtPayload> {

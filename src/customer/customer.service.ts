@@ -21,6 +21,7 @@ import { SessionService } from 'src/session/session.service';
 import { RestoreCustomerDto } from './dto/restore-customer.dto';
 import { UpdateCustomerByAdminDto } from './dto/update-customer-by-admin.dto copy';
 import { CUSTOMER_USER_PATTERNS } from './patterns/customer_patterns';
+import { CustomerGrowthByAdminDto } from './dto/customer-growth-by-admin.dto';
 
 @Injectable()
 export class CustomerService {
@@ -400,6 +401,60 @@ export class CustomerService {
 
     return {
       message: `Customer with id: ${id} has been restored successfully`,
+    };
+  }
+
+  // Active = not anonymized (isPermanentlyDeleted=false) and not soft-deleted
+  // (deletedAt IS NULL) — same "active" definition getAllProfiles uses when
+  // withDeleted is left off.
+  async growthByAdmin(dto: CustomerGrowthByAdminDto) {
+    const { organizationId, from, to } = dto;
+
+    const rangeMs = new Date(to).getTime() - new Date(from).getTime();
+    const previousFrom = new Date(new Date(from).getTime() - rangeMs).toISOString();
+    const previousTo = from;
+
+    const activeBaseQuery = () =>
+      this.repo
+        .createQueryBuilder('customer')
+        .where('customer.organizationId = :organizationId', { organizationId })
+        .andWhere('customer.isPermanentlyDeleted = :isPermanentlyDeleted', {
+          isPermanentlyDeleted: false,
+        })
+        .andWhere('customer.deletedAt IS NULL');
+
+    const totalActiveCustomers = await activeBaseQuery().getCount();
+
+    const newCustomers = await activeBaseQuery()
+      .andWhere('customer.createdAt BETWEEN :from AND :to', { from, to })
+      .getCount();
+
+    const previousNewCustomers = await activeBaseQuery()
+      .andWhere('customer.createdAt BETWEEN :previousFrom AND :previousTo', {
+        previousFrom,
+        previousTo,
+      })
+      .getCount();
+
+    const growth =
+      previousNewCustomers > 0
+        ? ((newCustomers - previousNewCustomers) / previousNewCustomers) * 100
+        : newCustomers > 0
+          ? 100
+          : 0;
+
+    // Bounded 0-100 ratio of new-vs-total customers, for UI elements (e.g. a
+    // progress bar fill) that can't render growth's unbounded/negative rate.
+    const activeRatio =
+      totalActiveCustomers > 0
+        ? Math.min(100, (newCustomers / totalActiveCustomers) * 100)
+        : 0;
+
+    return {
+      totalActiveCustomers,
+      newCustomers,
+      growth,
+      activeRatio,
     };
   }
 }
