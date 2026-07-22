@@ -6,6 +6,7 @@ const envSchema = z
     NODE_ENV: z.enum(['development', 'production', 'test']),
     JWT_SECRET_ACCESS: z.string(),
     JWT_SECRET_REFRESH: z.string(),
+    JWT_SECRET_VERIFY_EMAIL: z.string(),
     PORT: z.coerce.number().default(3000),
     DB_PORT: z.coerce.number().default(5432),
     DB_HOST: z.string(),
@@ -16,14 +17,26 @@ const envSchema = z
       message: 'RABBITMQ_URL must start with amqp:// or amqps://',
     }),
     RABBITMQ_QUEUE: z.string().min(1, 'RABBITMQ_QUEUE cannot be empty'),
+    RMQ_EVENTS_QUEUE_NOTIFICATIONS: z
+      .string()
+      .min(1, 'RMQ_EVENTS_QUEUE cannot be empty'),
+    RMQ_EVENTS_QUEUE_AUTHZ: z
+      .string()
+      .min(1, 'RMQ_EVENTS_QUEUE_AUTHZ cannot be empty'),
+    // Must match the events queue names used by orders-ms, payments-ms, and organization-ms
+    RMQ_EVENTS_QUEUE_ORDERS: z
+      .string()
+      .min(1, 'RMQ_EVENTS_QUEUE_ORDERS cannot be empty'),
+    RMQ_EVENTS_QUEUE_PAYMENTS: z
+      .string()
+      .min(1, 'RMQ_EVENTS_QUEUE_PAYMENTS cannot be empty'),
+    RMQ_EVENTS_QUEUE_ORGANIZATION: z
+      .string()
+      .min(1, 'RMQ_EVENTS_QUEUE_ORGANIZATION cannot be empty'),
     REDIS_HOST: z.string(),
     REDIS_PORT: z.coerce.number().default(6379),
-    SMTP_HOST: z.string().min(1, 'SMTP_HOST cannot be empty'),
-    SMTP_PORT: z.coerce.number().default(465),
-    SMTP_USER: z.string().min(1, 'SMTP_USER cannot be empty'),
-    SMTP_PASS: z.string().min(1, 'SMTP_PASS cannot be empty'),
-    SMTP_FROM: z.string().min(1, 'SMTP_FROM cannot be empty'),
-    RESET_PASSWORD_URL: z.string().url(),
+    REDIS_PASS: z.string(),
+    GOOGLE_CLIENT_ID: z.string().min(1, 'GOOGLE_CLIENT_ID cannot be empty'),
   })
   .required();
 
@@ -47,14 +60,16 @@ export const envs = {
   postgresDb: parsedEnv.data.POSTGRES_DB,
   rabbitmqUrl: parsedEnv.data.RABBITMQ_URL,
   rabbitmqQueue: parsedEnv.data.RABBITMQ_QUEUE,
+  rabbitmqEventsQueue: parsedEnv.data.RMQ_EVENTS_QUEUE_NOTIFICATIONS,
+  rabbitmqAuthzEventQueue: parsedEnv.data.RMQ_EVENTS_QUEUE_AUTHZ,
+  rabbitmqOrdersEventsQueue: parsedEnv.data.RMQ_EVENTS_QUEUE_ORDERS,
+  rabbitmqPaymentsEventsQueue: parsedEnv.data.RMQ_EVENTS_QUEUE_PAYMENTS,
+  rabbitmqOrganizationEventsQueue: parsedEnv.data.RMQ_EVENTS_QUEUE_ORGANIZATION,
   accessTokensecret: parsedEnv.data.JWT_SECRET_ACCESS,
   refreshTokenSecret: parsedEnv.data.JWT_SECRET_REFRESH,
+  verifyEmailTokenSecret: parsedEnv.data.JWT_SECRET_VERIFY_EMAIL,
   redisHost: parsedEnv.data.REDIS_HOST,
   redisPort: parsedEnv.data.REDIS_PORT,
-  smtpHost: parsedEnv.data.SMTP_HOST,
-  smtpPort: parsedEnv.data.SMTP_PORT,
-  smtpUser: parsedEnv.data.SMTP_USER,
-  smtpPass: parsedEnv.data.SMTP_PASS,
-  smtpFrom: parsedEnv.data.SMTP_FROM,
-  resetPasswordUrl: parsedEnv.data.RESET_PASSWORD_URL,
+  googleClientId: parsedEnv.data.GOOGLE_CLIENT_ID,
+  redisPass: parsedEnv.data.REDIS_PASS
 };

@@ -1,11 +1,13 @@
-import { JwtService } from "@nestjs/jwt";
-import { Module } from '@nestjs/common';
-import { envs } from "src/config";
+import { JwtService } from '@nestjs/jwt';
+import { Global, Module } from '@nestjs/common';
+import { envs } from 'src/config';
+import { JwtToken } from './enum/jwt-token.enum';
 
+@Global()
 @Module({
   providers: [
     {
-      provide: 'JWT_ACCESS',
+      provide: JwtToken.ACCESS,
       useFactory: () =>
         new JwtService({
           secret: envs.accessTokensecret,
@@ -13,7 +15,7 @@ import { envs } from "src/config";
         }),
     },
     {
-      provide: 'JWT_REFRESH',
+      provide: JwtToken.REFRESH,
       useFactory: () =>
         new JwtService({
           secret: envs.refreshTokenSecret,
@@ -21,6 +23,6 @@ import { envs } from "src/config";
         }),
     },
   ],
-  exports: ['JWT_ACCESS', 'JWT_REFRESH'],
+  exports: [JwtToken.ACCESS, JwtToken.REFRESH],
 })
 export class JwtProvidersModule {}

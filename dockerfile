@@ -1,4 +1,4 @@
-FROM node:21-alpine3.19
+FROM node:20-alpine3.19
 
 WORKDIR /usr/src/app
 
@@ -10,4 +10,4 @@ RUN npm install
 
 COPY . .
 
-EXPOSE 3003
+EXPOSE 4002
