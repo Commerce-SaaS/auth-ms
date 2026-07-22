@@ -1,254 +1,129 @@
-# 🔐 Auth Microservice (`auth-ms`)
+<h1 align="center">🔐 Auth Microservice · <code>auth-ms</code></h1>
 
-> NestJS authentication microservice responsible for user authentication, sessions, profiles, JWT management, OAuth login and account lifecycle events in a multi-tenant commerce platform.
+<p align="center">
+  <b>NestJS authentication microservice</b> — user authentication, sessions, profiles, JWT management,<br/>
+  OAuth login and account-lifecycle events for a multi-tenant commerce platform.
+</p>
 
----
+<p align="center">
+  <img src="https://img.shields.io/badge/NestJS-11-E0234E?style=for-the-badge&logo=nestjs&logoColor=white" />
+  <img src="https://img.shields.io/badge/TypeScript-5.7-3178C6?style=for-the-badge&logo=typescript&logoColor=white" />
+  <img src="https://img.shields.io/badge/PostgreSQL-TypeORM-4169E1?style=for-the-badge&logo=postgresql&logoColor=white" />
+  <img src="https://img.shields.io/badge/Redis-sessions-DC382D?style=for-the-badge&logo=redis&logoColor=white" />
+  <img src="https://img.shields.io/badge/RabbitMQ-transport-FF6600?style=for-the-badge&logo=rabbitmq&logoColor=white" />
+</p>
 
-# 📌 Purpose
+<p align="center">
+  <img src="https://img.shields.io/badge/Transport-RabbitMQ%20only%20(no%20HTTP)-orange?style=flat-square" />
+  <img src="https://img.shields.io/badge/Queue-auth__queue-8A2BE2?style=flat-square" />
+  <img src="https://img.shields.io/badge/Auth-JWT%20%2B%20Google%20OAuth-2E7D32?style=flat-square" />
+  <img src="https://img.shields.io/badge/Container%20port-4002-4169E1?style=flat-square" />
+</p>
 
-`auth-ms` is a **message-driven authentication microservice** that manages authentication flows for two different user domains:
+<br/>
 
-- 🏢 SaaS platform users (`SaasUser`)
-- 👤 Organization customers (`Customer`)
+## 📌 Purpose
 
-The service communicates exclusively through **RabbitMQ message patterns** and does not expose an HTTP API.
+`auth-ms` is a **message-driven authentication microservice** managing authentication flows for two distinct user domains:
 
----
+- 🏢 **SaaS platform users** (`SaasUser`)
+- 👤 **Organization customers** (`Customer`)
 
-# ✨ Main Responsibilities
+> [!IMPORTANT]
+> This is a **pure RabbitMQ microservice** — it starts with `NestFactory.createMicroservice()` and has **no REST controllers, no HTTP endpoints, and no HTTP listener**. The `PORT` env var is used only in a startup log line. All communication uses `@MessagePattern()` over RabbitMQ.
 
-## Authentication
+<br/>
 
-- User registration
-- Login with email/password
-- Google OAuth authentication
-- JWT access token generation
-- JWT refresh token rotation
-- Password reset flow
-- Email verification flow
-- Email change confirmation
+## ✨ Main Responsibilities
 
-## Session Management
+| Area | Responsibilities |
+|---|---|
+| 🔑 **Authentication** | Registration · email/password login · Google OAuth · JWT access tokens · refresh-token rotation · password reset · email verification · email-change confirmation |
+| 🗝️ **Session Management** | Redis-backed sessions · logout current · logout all · list active sessions · revoke sessions |
+| 🏢 **SaaS Users** | Profile management · account activation/deactivation · profile restoration |
+| 👤 **Customers** | Organization-based profiles · customer administration · soft delete / restore · anonymization events |
 
-- Redis-backed sessions
-- Logout current session
-- Logout all sessions
-- List active sessions
-- Revoke sessions
+<br/>
 
-## User Management
+## 🏗️ Architecture
 
-### SaaS users
+```mermaid
+flowchart TB
+    CALLERS["🌐 client-gateway / other services"] -. "RabbitMQ RPC · auth_queue" .-> AUTH["🔐 auth-ms<br/><i>NestJS microservice — no HTTP</i>"]
 
-- Profile management
-- Account activation/deactivation
-- Profile restoration
-
-### Customers
-
-- Organization-based profiles
-- Customer administration
-- Soft delete / restore
-- Customer anonymization events
-
----
-
-# 🏗️ Architecture
-
-```
-                         RabbitMQ
-                            │
-                            │
-        ┌───────────────────┴───────────────────┐
-        │                                       │
-        ▼                                       ▼
-
- Other Microservices                    Client Applications
-        │
-        │ RPC Messages
-        ▼
-
- ┌──────────────────────────────────────────┐
- │                auth-ms                   │
- │                                          │
- │  NestJS Microservice                     │
- │                                          │
- │  ┌──────────┐  ┌──────────┐              │
- │  │  JWT     │  │ Redis    │              │
- │  │ Tokens   │  │ Sessions │              │
- │  └──────────┘  └──────────┘              │
- │                                          │
- │  ┌──────────┐  ┌──────────┐              │
- │  │Postgres │  │ Google   │              │
- │  │Database │  │ OAuth    │              │
- │  └──────────┘  └──────────┘              │
- │                                          │
- └──────────────────────────────────────────┘
+    AUTH --> PG[("🐘 PostgreSQL<br/>SaasUser · Customer")]
+    AUTH --> REDIS[("⚡ Redis<br/>sessions · tokens")]
+    AUTH -. "verifyIdToken()" .-> GOOGLE["🔵 Google OAuth"]
 ```
 
----
+<br/>
 
-# 🛠️ Tech Stack
+## 🛠️ Tech Stack
 
 | Technology | Purpose |
 |---|---|
-| NestJS 11 | Microservice framework |
-| TypeScript | Programming language |
-| RabbitMQ | Message transport |
-| `@nestjs/microservices` | RMQ integration |
-| PostgreSQL | Persistent storage |
-| TypeORM 0.3 | ORM |
-| Redis | Session/token storage |
-| ioredis | Redis client |
-| JWT | Authentication tokens |
-| bcrypt | Password hashing |
-| Google OAuth | Social authentication |
-| class-validator | DTO validation |
-| class-transformer | DTO transformation |
-| Zod | Environment validation |
-| Jest + ts-jest | Testing |
+| **NestJS 11** | Microservice framework |
+| **TypeScript** | Programming language |
+| **RabbitMQ** + `@nestjs/microservices` | Message transport (RMQ) |
+| **PostgreSQL** + **TypeORM 0.3** | Persistent storage / ORM |
+| **Redis** + **ioredis** | Session / token storage |
+| **JWT** · **bcrypt** | Auth tokens · password hashing |
+| **Google OAuth** | Social authentication |
+| `class-validator` · `class-transformer` | DTO validation / transformation |
+| **Zod** | Environment validation |
+| **Jest** + **ts-jest** | Testing |
 
----
+<br/>
 
-# 📦 Installation
+## 📦 Installation & Running
 
 ```bash
 npm install
+cp .env.example .env        # fill required values before starting
 ```
 
-Create environment file:
+| Mode | Command |
+|---|---|
+| 🧑‍💻 Development | `npm run start:dev` |
+| 🐞 Debug | `npm run start:debug` |
+| 🚀 Production | `npm run build && npm run start:prod` |
+
+<details>
+<summary><b>🐳 Docker</b></summary>
+
+<br/>
+
+- **Image:** `node:20-alpine3.19`
+- **Container port:** `4002`
+- **Dependencies:** PostgreSQL
+
+> The exposed port does **not** represent an HTTP server — communication happens through RabbitMQ.
+
+</details>
+
+<br/>
+
+## 🧪 Testing
 
 ```bash
-cp .env.example .env
-```
-
-Fill required values before starting the service.
-
----
-
-# ▶️ Running Locally
-
-## Development
-
-```bash
-npm run start:dev
-```
-
-## Debug
-
-```bash
-npm run start:debug
-```
-
-## Production
-
-```bash
-npm run build
-
-npm run start:prod
-```
-
----
-
-# ⚠️ Important: No HTTP API
-
-`auth-ms` is a pure RabbitMQ microservice.
-
-The application starts with:
-
-```ts
-NestFactory.createMicroservice()
-```
-
-There are:
-
-- ❌ No REST controllers
-- ❌ No HTTP endpoints
-- ❌ No HTTP listener
-
-The `PORT` environment variable is only used in startup logs.
-
----
-
-# 🐳 Docker
-
-Docker configuration:
-
-```
-auth-ms
-
-├── Docker image:
-│   node:20-alpine3.19
-│
-├── Container port:
-│   4002
-│
-└── Dependencies:
-    └── PostgreSQL
-```
-
-The exposed port does not represent an HTTP server.
-
-Communication happens through:
-
-```
-auth-ms
-    |
-    |
- RabbitMQ
-```
-
----
-
-# 🧪 Testing
-
-Available scripts:
-
-```bash
-npm run test
-```
-
-```bash
+npm run test          # unit tests
 npm run test:watch
-```
-
-```bash
 npm run test:cov
-```
-
-```bash
 npm run test:debug
-```
-
-```bash
 npm run test:e2e
 ```
 
-Current state:
+> [!WARNING]
+> **Current state:** `customer.service.spec.ts` exists, but there is **no `test/` directory and no `jest-e2e.json`**, so `npm run test:e2e` fails due to the missing configuration file.
 
-```
-✅ customer.service.spec.ts exists
+<br/>
 
-❌ No test directory
-❌ No jest-e2e.json
-```
+## 🔐 Environment Variables
 
-`npm run test:e2e` currently fails because the configuration file is missing.
-
----
-
-# 🔐 Environment Variables
-
-Validated using:
-
-```
-src/config/envs.ts
-```
-
-The application exits if required variables are missing.
+Validated using `src/config/envs.ts` — **the application exits if required variables are missing.**
 
 | Variable | Required | Description |
-|---|---|---|
+|---|:---:|---|
 | `NODE_ENV` | ✅ | Runtime environment |
 | `PORT` | ❌ | Startup log only |
 | `DB_HOST` | ✅ | PostgreSQL host |
@@ -268,9 +143,10 @@ The application exits if required variables are missing.
 | `VERIFY_EMAIL_URL` | ✅ | Email verification URL |
 | `RESET_PASSWORD_URL` | ✅ | Password reset URL |
 
----
+<details>
+<summary><b>📄 Example <code>.env</code></b></summary>
 
-# Example `.env`
+<br/>
 
 ```env
 NODE_ENV=development
@@ -299,29 +175,18 @@ VERIFY_EMAIL_URL=https://app.com/verify
 RESET_PASSWORD_URL=https://app.com/reset
 ```
 
----
+</details>
 
-# 📨 Incoming RabbitMQ Patterns
+<br/>
 
-All incoming communication uses:
+## 📨 Incoming RabbitMQ Patterns
 
-```ts
-@MessagePattern()
-```
+All incoming communication uses `@MessagePattern()` — no HTTP routes exist.
 
-No HTTP routes exist.
+<details>
+<summary><b>🏢 SaaS Authentication</b> — <code>src/auth/saas-auth</code></summary>
 
----
-
-# 🏢 SaaS Authentication
-
-Location:
-
-```
-src/auth/saas-auth
-```
-
-Patterns:
+<br/>
 
 | Pattern | Description |
 |---|---|
@@ -337,17 +202,12 @@ Patterns:
 | `saas.auth.change-email.request` | Request email change |
 | `saas.auth.change-email.confirm` | Confirm email change |
 
----
+</details>
 
-# 👤 Customer Authentication
+<details>
+<summary><b>👤 Customer Authentication</b> — <code>src/auth/customer-auth</code></summary>
 
-Location:
-
-```
-src/auth/customer-auth
-```
-
-Patterns:
+<br/>
 
 | Pattern | Description |
 |---|---|
@@ -363,17 +223,12 @@ Patterns:
 | `customer.auth.change-email.request` | Request email change |
 | `customer.auth.change-email.confirm` | Confirm email change |
 
----
+</details>
 
-# 🔑 Session Management
+<details>
+<summary><b>🗝️ Session Management</b> — <code>src/session</code></summary>
 
-Location:
-
-```
-src/session
-```
-
-Patterns:
+<br/>
 
 | Pattern | Description |
 |---|---|
@@ -382,17 +237,12 @@ Patterns:
 | `session.list` | List active sessions |
 | `session.revoke` | Revoke session |
 
----
+</details>
 
-# 👥 SaaS User Profile
+<details>
+<summary><b>👥 SaaS User Profile</b> — <code>src/user</code></summary>
 
-Location:
-
-```
-src/user
-```
-
-Patterns:
+<br/>
 
 | Pattern | Description |
 |---|---|
@@ -401,17 +251,12 @@ Patterns:
 | `auth.saas.user.deactivate` | Soft delete |
 | `auth.saas.user.restore` | Restore user |
 
----
+</details>
 
-# 👥 Customer Profile
+<details>
+<summary><b>👥 Customer Profile</b> — <code>src/customer</code></summary>
 
-Location:
-
-```
-src/customer
-```
-
-Patterns:
+<br/>
 
 | Pattern | Description |
 |---|---|
@@ -424,274 +269,85 @@ Patterns:
 | `auth.customer.user.restore` | Restore customer |
 | `auth.customer.user.growth_by_admin` | Customer growth stats |
 
----
+</details>
 
-# 📤 Outgoing Events
+<br/>
 
-The service publishes events using:
+## 📤 Outgoing Events
 
-```ts
-ClientProxy.emit()
+Published with `ClientProxy.emit()`.
+
+```mermaid
+flowchart LR
+    AUTH["🔐 auth-ms"]
+    NOTIF["📧 notifications-ms"]
+    ORG["🏢 organization-ms"]
+    ORD["🧾 orders-ms"]
+    PAY["💳 payments-ms"]
+
+    AUTH -->|"verify_email · forgot_password · *_email_changed"| NOTIF
+    AUTH -->|"userOrganization.user_authz_refresh"| ORG
+    AUTH -->|"customer.anonymized"| ORD
+    AUTH -->|"customer.anonymized"| PAY
+    AUTH -->|"customer.anonymized"| ORG
 ```
 
----
+| Group | Queue | Events | Consumer(s) |
+|---|---|---|---|
+| **Notifications** | `RMQ_EVENTS_QUEUE_NOTIFICATIONS` | `verify_email.saas`, `forgot_password.saas`, `saas_mailer_email_changed`, `verify_email.customer`, `forgot_password.customer`, `customer_mailer_email_changed` | notifications-ms |
+| **Authorization** | `RMQ_EVENTS_QUEUE_AUTHZ` | `userOrganization.user_authz_refresh` | organization-ms |
+| **Anonymization** | `RMQ_EVENTS_QUEUE_ORDERS`, `RMQ_EVENTS_QUEUE_PAYMENTS`, `RMQ_EVENTS_QUEUE_ORGANIZATION` | `customer.anonymized` | orders-ms · payments-ms · organization-ms |
 
-## Notifications Events
+<br/>
 
-Queue:
+## 🔌 External Dependencies
 
-```
-RMQ_EVENTS_QUEUE_NOTIFICATIONS
-```
+| Dependency | Usage |
+|---|---|
+| 🐘 **PostgreSQL** | TypeORM entities `SaasUser`, `Customer`. Dev uses `synchronize: true`; production requires migrations. |
+| ⚡ **Redis** (`ioredis`) | Sessions, token storage, temporary authentication state |
+| 🐇 **RabbitMQ** | Incoming authentication requests + outgoing domain events |
+| 🔵 **Google OAuth** (`google-auth-library`) | `Google ID Token → verifyIdToken() → user authentication` |
 
-Events:
+<br/>
 
-| Event |
-|---|
-| `verify_email.saas` |
-| `forgot_password.saas` |
-| `saas_mailer_email_changed` |
-| `verify_email.customer` |
-| `forgot_password.customer` |
-| `customer_mailer_email_changed` |
-
-Consumer:
-
-```
-notifications-ms
-```
-
----
-
-## Authorization Events
-
-Queue:
-
-```
-RMQ_EVENTS_QUEUE_AUTHZ
-```
-
-Event:
-
-```
-userOrganization.user_authz_refresh
-```
-
----
-
-## Customer Anonymization Events
-
-Published to:
-
-```
-RMQ_EVENTS_QUEUE_ORDERS
-RMQ_EVENTS_QUEUE_PAYMENTS
-RMQ_EVENTS_QUEUE_ORGANIZATION
-```
-
-Event:
-
-```
-customer.anonymized
-```
-
-Consumers:
-
-```
-orders-ms
-payments-ms
-organization-ms
-```
-
----
-
-# 🔌 External Dependencies
-
-## PostgreSQL
-
-Used by TypeORM.
-
-Entities:
-
-```
-SaasUser
-Customer
-```
-
-Development:
-
-```ts
-synchronize: true
-```
-
-Production requires migrations.
-
----
-
-## Redis
-
-Used for:
-
-- Sessions
-- Token storage
-- Temporary authentication state
-
-Client:
-
-```
-ioredis
-```
-
----
-
-## RabbitMQ
-
-Used for:
-
-- Incoming authentication requests
-- Outgoing domain events
-
----
-
-## Google OAuth
-
-Implemented using:
-
-```
-google-auth-library
-```
-
-Flow:
-
-```
-Google ID Token
-        |
-        ▼
-verifyIdToken()
-        |
-        ▼
-User authentication
-```
-
----
-
-# 📁 Project Structure
+## 📁 Project Structure
 
 ```
 auth-ms/
-
-src/
-
-├── auth/
-│
-│   ├── saas-auth/
-│   ├── customer-auth/
-│   └── oauth/
-│
-├── customer/
-│
-├── user/
-│
-├── session/
-│
-├── redis/
-│
-├── config/
-│
-├── database/
-│
-└── main.ts
+└── src/
+    ├── auth/
+    │   ├── saas-auth/
+    │   ├── customer-auth/
+    │   └── oauth/
+    ├── customer/
+    ├── user/
+    ├── session/
+    ├── redis/
+    ├── config/
+    ├── database/
+    └── main.ts
 ```
 
----
+<br/>
 
-# ⚠️ Known Limitations / TODO
+## ⚠️ Known Limitations / TODO
 
-## Environment variables
+> [!WARNING]
+> These are tracked openly and should be verified before production.
 
-Missing from `.env.example`:
+- **Env vars missing from `.env.example`:** `JWT_SECRET_VERIFY_EMAIL`, `REDIS_PASS`, `RMQ_EVENTS_QUEUE_ORDERS`, `RMQ_EVENTS_QUEUE_PAYMENTS`, `RMQ_EVENTS_QUEUE_ORGANIZATION`.
+- **Google OAuth pattern collision:** both `SaaSAuthController` and `CustomerAuthController` register `auth.google`, which may create a routing conflict.
+- **Mailer dependencies:** `@nestjs-modules/mailer`, `nodemailer`, `handlebars` are installed, but `src/custom-mailer/` does not exist and the build script references missing templates.
+- **Missing SaaS user handlers:** patterns `GET_ALL_PROFILES` and `DELETE` are defined but have no controller handlers.
+- **Database migrations:** no migration files found; production migration strategy should be verified.
 
-```
-JWT_SECRET_VERIFY_EMAIL
-REDIS_PASS
-RMQ_EVENTS_QUEUE_ORDERS
-RMQ_EVENTS_QUEUE_PAYMENTS
-RMQ_EVENTS_QUEUE_ORGANIZATION
-```
+<br/>
 
----
-
-## Google OAuth pattern collision
-
-Both controllers register:
-
-```
-auth.google
-```
-
-SaaS:
-
-```
-SaaSAuthController
-```
-
-Customer:
-
-```
-CustomerAuthController
-```
-
-This may create a routing conflict.
-
----
-
-## Mailer dependencies
-
-Installed:
-
-```
-@nestjs-modules/mailer
-nodemailer
-handlebars
-```
-
-However:
-
-```
-src/custom-mailer/
-```
-
-does not exist.
-
-The build script references missing templates.
-
----
-
-## Missing SaaS user handlers
-
-Defined patterns:
-
-```
-GET_ALL_PROFILES
-DELETE
-```
-
-do not currently have controller handlers.
-
----
-
-## Database migrations
-
-No migration files found.
-
-Production migration strategy should be verified.
-
----
-
-# ✅ Service Status
+## ✅ Service Status
 
 | Feature | Status |
-|---|---|
+|---|:---:|
 | JWT authentication | ✅ |
 | Refresh tokens | ✅ |
 | Redis sessions | ✅ |
@@ -703,3 +359,7 @@ Production migration strategy should be verified.
 | Event publishing | ✅ |
 | HTTP API | ❌ Not exposed |
 | Automated tests | ⚠️ Partial |
+
+<p align="center">
+  <img src="https://capsule-render.vercel.app/api?type=waving&color=gradient&height=80&section=footer" />
+</p>
